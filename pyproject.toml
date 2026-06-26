@@ -1,0 +1,17 @@
+[project]
+name = "standalone-contact-detection"
+version = "0.1.0"
+description = "A self-contained, from-scratch reimplementation of contact detection from a motion-capture trajectory (numpy + scipy only)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.0",
+    "mujoco>=3.2.0",
+    "numpy>=2.5.0",
+    "scipy>=1.18.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
