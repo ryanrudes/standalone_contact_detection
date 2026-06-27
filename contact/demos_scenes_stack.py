@@ -26,32 +26,10 @@ import numpy as np
 
 import mujoco
 
-# This module deliberately imports NO contact submodule (avoids the mujoco_gen import
-# cycle). Everything below is self-contained.
+from ._mjcf import body_id as _bid, options as _common_options
 
-
-# --------------------------------------------------------------------------------------
-# Tiny self-contained helpers (mirroring mujoco_gen's, but local to break the cycle).
-# --------------------------------------------------------------------------------------
-
-def _common_options() -> str:
-    """Shared MuJoCo <option>: gravity -9.81, a fine timestep, a pyramidal cone.
-
-    The small timestep keeps the soft-constraint contact stiff and the resting stacks
-    quiet (no creep), and the pyramidal cone matches the rest of the package.
-    """
-    return (
-        '<option timestep="0.0005" gravity="0 0 -9.81" '
-        'integrator="implicitfast" cone="pyramidal"/>'
-    )
-
-
-def _bid(model: mujoco.MjModel, name: str) -> int:
-    """Resolve a body name to its integer id (raises if absent)."""
-    i = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-    if i < 0:
-        raise KeyError(f"no body named {name!r} in model")
-    return i
+# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
+# (which imports this file at its end to register the builders) stays cycle-free.
 
 
 # Shared box half-extent for the stacked boxes (m). Bottom-face center material point of a

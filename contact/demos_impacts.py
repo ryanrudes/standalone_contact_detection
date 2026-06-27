@@ -48,47 +48,10 @@ import numpy as np
 
 import mujoco
 
-# NOTE on self-containment (the import contract): this module imports ONLY ``mujoco`` and
-# ``numpy``. The mode strings it ultimately produces (free/impact/static/sliding/rolling)
-# are defined in ``contact.types`` and emitted by ``mujoco_gen._classify_mode``; we never
-# need them here, so we deliberately do NOT import any ``contact`` submodule -- ``mujoco_gen``
-# imports THIS file at its end, and importing it back would create a cycle.
+from ._mjcf import free_dofadr as _free_dofadr, obj_id as _id, options as _common_options
 
-
-# --------------------------------------------------------------------------------------
-# Tiny self-contained helpers (intentionally NOT imported from mujoco_gen -- see module
-# docstring on the import cycle).
-# --------------------------------------------------------------------------------------
-
-def _common_options() -> str:
-    """MuJoCo <option> block shared by these demos.
-
-    Gravity -9.81 z, a small timestep for clean impacts, and a pyramidal friction cone
-    (matching the rest of the truth factory). The small timestep matters for the impact
-    demos: a sharp touchdown otherwise smears across the recorded frames.
-    """
-    return (
-        '<option timestep="0.0005" gravity="0 0 -9.81" '
-        'integrator="implicitfast" cone="pyramidal"/>'
-    )
-
-
-def _id(model: mujoco.MjModel, objtype: int, name: str) -> int:
-    """Resolve a named MuJoCo object to its integer id (raises if absent)."""
-    i = mujoco.mj_name2id(model, objtype, name)
-    if i < 0:
-        raise KeyError(f"no {objtype!r} named {name!r} in model")
-    return i
-
-
-def _free_dofadr(model: mujoco.MjModel, body_id: int) -> int:
-    """Index into ``data.qvel`` of the first DOF of ``body_id``'s (free)joint.
-
-    For a freejoint body the six dofs are [vx, vy, vz, wx, wy, wz] (linear then angular,
-    all WORLD-frame for a freejoint), so ``qvel[adr+0:adr+3]`` is the COM linear velocity
-    and ``qvel[adr+3:adr+6]`` is the angular velocity.
-    """
-    return int(model.jnt_dofadr[model.body_jntadr[body_id]])
+# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
+# (which imports this file at its end to register the builders) stays cycle-free.
 
 
 # Shared geometry constants (kept consistent so contact_point_local / surface lines up).

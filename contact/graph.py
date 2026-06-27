@@ -646,11 +646,9 @@ def detect_scene(
         dwell = max(float(cfg.graph.active_set_dwell_time), 1e-9)
         log_dwell_stay = -max(float(dt), 1e-9) / dwell
         log_evidence = np.stack([log_inactive, log_active], axis=-1)  # (T, E, 2)
-        active_posterior, map_sets = structure_inference.particle_filter_active_sets(
-            log_evidence,
-            log_dwell_stay,
-            n_particles=int(getattr(cfg.inference, "n_particles", 256)),
-            seed=0,
+        posterior = structure_inference.StructurePosterior(log_dwell_stay, seed=0)
+        active_posterior, map_sets = posterior.filter(
+            log_evidence, n_particles=int(getattr(cfg.inference, "n_particles", 256))
         )
         active_posterior = np.clip(np.asarray(active_posterior, dtype=float), 0.0, 1.0)
         map_active_set = [

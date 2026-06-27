@@ -45,6 +45,7 @@ Public API
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import expit
 
 from .config import TransitionParams
 from .types import CONTACT_MODES, FREE, IMPACT, ContactObservations
@@ -284,7 +285,7 @@ def gated_transition_tensor(
     # sharpness. Computed with a numerically-stable sigmoid (no overflow for large |z|).
     softness = max(float(params.gap_gate_softness), 1e-9)
     z = (float(params.gap_gate) - gap) / softness  # (T,)
-    gate = _sigmoid(z)  # (T,) in [0, 1]
+    gate = expit(z)  # (T,) in [0, 1]
 
     # --- Decompose the base FREE row -----------------------------------------------
     # base_free_diag : "I stayed FREE" mass = P_base(free | free).
@@ -322,19 +323,3 @@ def gated_transition_tensor(
         row /= row.sum()
         tensor[t, free_i] = row
     return tensor
-
-
-def _sigmoid(z: np.ndarray) -> np.ndarray:
-    """Numerically-stable logistic ``1 / (1 + exp(-z))``, elementwise.
-
-    Splits on the sign of ``z`` so neither ``exp(z)`` nor ``exp(-z)`` overflows for
-    large ``|z|`` (the gate saturates cleanly at 0 and 1 far from the surface).
-    """
-    z = np.asarray(z, dtype=float)
-    out = np.empty_like(z)
-    pos = z >= 0.0
-    neg = ~pos
-    out[pos] = 1.0 / (1.0 + np.exp(-z[pos]))
-    ez = np.exp(z[neg])
-    out[neg] = ez / (1.0 + ez)
-    return out

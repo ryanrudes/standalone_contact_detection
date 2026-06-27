@@ -40,49 +40,12 @@ Public API
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import numpy as np
+from scipy.special import logsumexp
 
-__all__ = ["logsumexp", "forward_backward", "viterbi"]
-
-# A finite stand-in for log(0). Using -inf directly is correct but litters the
-# arithmetic with nan from (-inf) + (+inf) style cancellations; this sentinel is
-# small enough to behave like zero probability while staying finite.
-_LOG_ZERO = -1e30
-
-
-def logsumexp(a: np.ndarray, axis: int | None = None) -> np.ndarray:
-    """Numerically stable ``log(sum(exp(a)))`` along ``axis``.
-
-    Computes ``m + log(sum(exp(a - m)))`` with ``m = max(a)``, the standard
-    max-shift trick: factoring out the largest term keeps every exponential in
-    ``(0, 1]`` so the sum cannot overflow, and underflow of the small terms is
-    harmless. This is the single primitive that lets the whole HMM stay in
-    log-space (THEORY.md section 5 — never multiply raw likelihoods).
-
-    Parameters
-    ----------
-    a:
-        Input array of log-values.
-    axis:
-        Axis (or None for the whole array) to reduce over.
-
-    Returns
-    -------
-    np.ndarray
-        The reduced log-sum-exp, with ``axis`` removed (a 0-d array / scalar
-        when ``axis is None``).
-    """
-    a = np.asarray(a, dtype=float)
-    a_max = np.max(a, axis=axis, keepdims=True)
-    # Where an entire slice is -inf, a_max is -inf; replace with 0 so the shift
-    # `a - a_max` yields -inf - 0 = -inf (and exp -> 0), not the invalid -inf -(-inf).
-    a_max_safe = np.where(np.isfinite(a_max), a_max, 0.0)
-    s = np.sum(np.exp(a - a_max_safe), axis=axis, keepdims=True)
-    # A fully -inf slice has sum 0; log(0) = -inf is the correct result there, so
-    # silence the (expected) divide-by-zero warning rather than special-casing it.
-    with np.errstate(divide="ignore"):
-        out = np.log(s) + a_max_safe
-    return np.squeeze(out, axis=axis) if axis is not None else out.reshape(())
+__all__ = ["logsumexp", "forward_backward", "viterbi", "TemporalSmoother", "HMM"]
 
 
 def _broadcast_trans(log_trans: np.ndarray, T: int, S: int) -> np.ndarray:
@@ -256,3 +219,48 @@ def viterbi(
     for t in range(T - 2, -1, -1):
         path[t] = psi[t + 1, path[t + 1]]
     return path.astype(int)
+
+
+# ======================================================================================
+# Object interface: a temporal model bundles its prior so emissions are the only per-call
+# input. The contact layer plugs its per-mode emissions into one of these; the engine
+# itself stays contact-free (THEORY.md section 5).
+# ======================================================================================
+
+
+class TemporalSmoother(Protocol):
+    """A latent-state temporal model over abstract states ``0..S-1``.
+
+    It turns a per-frame log-emission matrix ``(T, S)`` into a smoothed posterior and a MAP
+    path. :class:`HMM` and :class:`contact.hsmm.SemiMarkovHMM` both satisfy this interface,
+    so the detector can swap the plain Markov prior for the explicit-duration one without
+    changing how it consumes the result.
+    """
+
+    def posterior(self, log_emission: np.ndarray) -> tuple[np.ndarray, float]:
+        """``((T, S) gamma, total_loglik)`` -- the smoothed per-frame state posterior."""
+        ...
+
+    def map_path(self, log_emission: np.ndarray) -> np.ndarray:
+        """``(T,)`` MAP state path -- the clean contiguous segmentation."""
+        ...
+
+
+class HMM:
+    """Hidden Markov Model over modes -- the discrete shadow of the hybrid system (s.5).
+
+    Bundles the temporal prior (initial distribution + transitions, either a homogeneous
+    ``(S, S)`` matrix or a gap-gated time-varying ``(T, S, S)`` stack) so emissions are the
+    only per-call input. :meth:`posterior` is forward-backward (smoothing); :meth:`map_path`
+    is Viterbi (the MAP segmentation). Both run in log-space on the module functions above.
+    """
+
+    def __init__(self, log_trans: np.ndarray, log_init: np.ndarray) -> None:
+        self.log_trans = log_trans
+        self.log_init = log_init
+
+    def posterior(self, log_emission: np.ndarray) -> tuple[np.ndarray, float]:
+        return forward_backward(log_emission, self.log_trans, self.log_init)
+
+    def map_path(self, log_emission: np.ndarray) -> np.ndarray:
+        return viterbi(log_emission, self.log_trans, self.log_init)

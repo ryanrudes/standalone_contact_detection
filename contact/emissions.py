@@ -37,10 +37,9 @@ Public API
 ``log_emissions(obs, params, gap_bias, states, material=None, force=None) -> (T, S)``
     The assembled emission-log-likelihood matrix, one column per requested state.
 
-``STATE_BUILDERS``
-    A ``{state_name: builder}`` dict; each builder maps
-    ``(obs, params, gap_bias, material, force) -> (T,)`` log-densities and is independently
-    testable.
+``MODES``
+    A ``{mode_name: ContactMode}`` registry; each mode is a generative model whose
+    ``log_density(obs, params, gap_bias, material, force) -> (T,)`` is independently testable.
 
 The optional ``force`` (a :class:`~contact.config.ForceEmissionParams`) enables the
 MEASURED-force channel (DESIGN.md PART II.A; PHASE 4a): when both ``force`` is given AND
@@ -54,7 +53,6 @@ This module imports only :mod:`contact.types` and :mod:`contact.config`.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import lru_cache
 
 import numpy as np
@@ -373,45 +371,79 @@ def _force_log_density(
 
 
 # --------------------------------------------------------------------------------------
-# Per-state emission builders (THEORY.md section 4 free vs. section 3 mode subspaces)
+# The contact modes (THEORY.md section 3) as generative models.
 # --------------------------------------------------------------------------------------
 #
-# Each builder returns a (T,) array of log p(obs_t | state). Every channel of the
-# observation appears in *every* builder so the densities are comparable over the same
-# observation space (gap, v_normal in R, v_tangent in R^2, omega_normal in R,
-# omega_tangent in R^2) -- a requirement for the likelihood ratio of THEORY.md s.4.
-#
-# Channels NOT pinned by a mode get a *broad* density (the FREE-scale Gaussians) so the
-# mode neither rewards nor penalizes activity it does not constrain; channels the mode
-# pins get a *tight* (or correlated, for rolling) density. The signature of each mode is
-# precisely the set of pinned channels (THEORY.md section 3).
+# Each mode is a proper probability density over the WHOLE observation (gap, v_normal in R,
+# v_tangent in R^2, omega_normal in R, omega_tangent in R^2) so the columns are comparable
+# and their differences are the calibrated likelihood ratios of THEORY.md s.4. A mode's
+# *signature* is the set of twist channels it PINS to ~0 vs. EXCITES (s.3); off-subspace
+# channels get a broad FREE-scale density so the mode neither rewards nor penalizes motion
+# it does not constrain. Each subclass writes that signature as ``kinematic_log_density``;
+# the base adds the shared, optional, gated measured-force channel (DESIGN.md II.A) once.
 
 
-def free_logpdf(
-    obs: ContactObservations,
-    params: EmissionParams,
-    gap_bias: float,
-    material: MaterialParams | None = None,
-    force: ForceEmissionParams | None = None,
-) -> np.ndarray:
-    """FREE: diffuse on every channel (THEORY.md section 4 -- "nothing is pinned").
+class ContactMode:
+    """A single latent contact mode, written as a generative model (THEORY.md s.3/s.4).
 
-    Channels:
-      gap           ~ Uniform over ``gap_free_range``  (log density = -log(range))
+    Subclasses declare the KINEMATIC density over the (gap, twist) observation -- which
+    channels the mode pins and which it excites, i.e. its physical signature (s.3). The
+    base then layers on the cross-cutting MEASURED-FORCE channel (DESIGN.md II.A), so that
+    optional, gated factor lives in exactly one place instead of being re-pasted into every
+    mode. ``name`` is the ``contact.types`` mode id -- both the registry key and the
+    selector for the mode's force density.
+    """
+
+    name: str = ""
+
+    def kinematic_log_density(
+        self, obs: ContactObservations, params: EmissionParams, gap_bias: float
+    ) -> np.ndarray:
+        """``(T,)`` log p(gap, twist | mode) -- the mode's kinematic signature (s.3)."""
+        raise NotImplementedError
+
+    def log_density(
+        self,
+        obs: ContactObservations,
+        params: EmissionParams,
+        gap_bias: float,
+        material: MaterialParams | None = None,
+        force: ForceEmissionParams | None = None,
+    ) -> np.ndarray:
+        """Full ``(T,)`` log-emission: the kinematic signature plus the optional, gated
+        measured-force channel (DESIGN.md II.A).
+
+        ``material`` is accepted for interface symmetry (a future compliance-aware term,
+        s.7); the kinematic densities here do not yet use it. With no force channel the
+        result is the pure kinematic density.
+        """
+        lp = self.kinematic_log_density(obs, params, gap_bias)
+        if obs.normal_force is not None and force is not None:
+            lp = lp + _force_log_density(obs, self.name, force)  # measured-force (DESIGN.md II.A)
+        return lp
+
+
+class Free(ContactMode):
+    """FREE: nothing is pinned -- a diffuse prior on every channel (THEORY.md s.4).
+
+    The body could be at any clearance moving any way, so every channel is broad:
+      gap           ~ Uniform over ``gap_free_range``
       v_normal      ~ N(0, free_vel_sigma^2)
       v_tangent     ~ N(0, free_vel_sigma^2 I)  on R^2
       omega_normal  ~ N(0, free_omega_sigma^2)
       omega_tangent ~ N(0, free_omega_sigma^2 I) on R^2
     ``gap_bias`` is unused (free has no resting contact).
     """
-    lp = _log_uniform(params.gap_free_range) * np.ones_like(np.asarray(obs.gap, dtype=float))
-    lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.free_vel_sigma)
-    lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
-    lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
-    lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
-    if obs.normal_force is not None and force is not None:
-        lp = lp + _force_log_density(obs, FREE, force)  # measured-force channel (DESIGN.md II.A)
-    return lp
+
+    name = FREE
+
+    def kinematic_log_density(self, obs, params, gap_bias):
+        lp = _log_uniform(params.gap_free_range) * np.ones_like(np.asarray(obs.gap, dtype=float))
+        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.free_vel_sigma)
+        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
+        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
+        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
+        return lp
 
 
 def _contact_gap_logpdf(
@@ -428,14 +460,8 @@ def _contact_gap_logpdf(
     )
 
 
-def static_logpdf(
-    obs: ContactObservations,
-    params: EmissionParams,
-    gap_bias: float,
-    material: MaterialParams | None = None,
-    force: ForceEmissionParams | None = None,
-) -> np.ndarray:
-    """STATIC / sticking: the whole twist is pinned to ~0 (THEORY.md section 3).
+class Static(ContactMode):
+    """STATIC / sticking: the whole twist is pinned to ~0 -- a contact at rest (s.3).
 
     Channels:
       gap           ~ split-normal about gap_bias (sigma_gap above / sigma_pen below)
@@ -444,63 +470,51 @@ def static_logpdf(
       omega_normal  ~ N(0, omega_sigma^2)
       omega_tangent ~ N(0, omega_sigma^2 I)
     """
-    lp = _contact_gap_logpdf(obs, params, gap_bias)
-    lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-    lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
-    lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
-    lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
-    if obs.normal_force is not None and force is not None:
-        lp = lp + _force_log_density(obs, STATIC, force)  # measured-force channel (DESIGN.md II.A)
-    return lp
+
+    name = STATIC
+
+    def kinematic_log_density(self, obs, params, gap_bias):
+        lp = _contact_gap_logpdf(obs, params, gap_bias)
+        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
+        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
+        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
+        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
+        return lp
 
 
-def sliding_logpdf(
-    obs: ContactObservations,
-    params: EmissionParams,
-    gap_bias: float,
-    material: MaterialParams | None = None,
-    force: ForceEmissionParams | None = None,
-) -> np.ndarray:
+class Sliding(ContactMode):
     """SLIDING: tangential-linear motion only (THEORY.md section 3).
 
     Channels:
       gap           ~ split-normal about gap_bias
       v_normal      ~ N(0, vel_sigma^2)              (still pinned: not separating)
-      v_tangent     ~ ring density peaked at |v_tangent| = slide_speed, width vel_sigma
-                      (a proper R^2 density favouring nonzero tangential SPEED with an
-                       uninformative direction; see ``_log_offset_magnitude_2d``)
-      omega_normal  ~ N(0, omega_sigma^2)            (small: not pivoting)
-      omega_tangent ~ N(0, omega_sigma^2 I)          (small: not rolling)
+      v_tangent     ~ ring density peaked at |v_tangent| = slide_speed (a proper R^2 density
+                      favouring nonzero tangential SPEED, direction uninformative)
+      omega_normal  ~ tight+broad mixture (small: not pivoting -- but a struck slider can spin)
+      omega_tangent ~ tight+broad mixture (small: not rolling)
     """
-    # The tangential SPEED is appreciable but its magnitude is otherwise unknown -- a sliding
-    # body sweeps a whole RANGE of speeds (it accelerates, decelerates, drags to rest). So the
-    # ring must be BROAD in magnitude, not a razor-thin peak at one characteristic speed:
-    # width scales with slide_speed (and never below vel_sigma). A narrow ring centered on a
-    # single speed catastrophically rejects every other speed -> the body wrongly reads FREE.
-    slide_width = max(params.vel_sigma, params.slide_width_frac * params.slide_speed)
-    lp = _contact_gap_logpdf(obs, params, gap_bias)
-    lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-    lp = lp + _log_offset_magnitude_2d(obs.v_tangent, params.slide_speed, slide_width)
-    # omega is OFF-subspace for sliding: a sliding body USUALLY isn't spinning (so still reward
-    # omega~0, keeping a sliding box distinct from nothing), but it CAN be (a struck ball slides
-    # while spinning up into a roll). A heavy-tailed tight+broad mixture does both -- a single
-    # tight Gaussian drove the spinning-slider to ~-2000 and it wrongly read FREE; a single
-    # broad one lowered the omega~0 reward and a plain sliding box then lost to STATIC.
-    wb = params.slide_omega_broad_weight
-    lp = lp + _log_mix_zero_1d(obs.omega_normal, params.omega_sigma, params.free_omega_sigma, wb)
-    lp = lp + _log_mix_zero_2d(obs.omega_tangent, params.omega_sigma, params.free_omega_sigma, wb)
-    if obs.normal_force is not None and force is not None:
-        lp = lp + _force_log_density(obs, SLIDING, force)  # measured-force channel (DESIGN.md II.A)
-    return lp
+
+    name = SLIDING
+
+    def kinematic_log_density(self, obs, params, gap_bias):
+        # The tangential SPEED is appreciable but a sliding body sweeps a whole RANGE of
+        # speeds (it accelerates, decelerates, drags to rest), so the ring must be BROAD in
+        # magnitude, not a razor peak at one speed (which would reject every other speed and
+        # flip the frame to FREE). Width scales with slide_speed, floored at vel_sigma.
+        slide_width = max(params.vel_sigma, params.slide_width_frac * params.slide_speed)
+        lp = _contact_gap_logpdf(obs, params, gap_bias)
+        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
+        lp = lp + _log_offset_magnitude_2d(obs.v_tangent, params.slide_speed, slide_width)
+        # omega is OFF-subspace: a sliding body usually isn't spinning (reward omega~0) but
+        # CAN be (a struck ball slides while spinning up). A heavy-tailed tight+broad mixture
+        # does both; a single tight Gaussian drove the spinning-slider to ~-2000 -> FREE.
+        wb = params.slide_omega_broad_weight
+        lp = lp + _log_mix_zero_1d(obs.omega_normal, params.omega_sigma, params.free_omega_sigma, wb)
+        lp = lp + _log_mix_zero_2d(obs.omega_tangent, params.omega_sigma, params.free_omega_sigma, wb)
+        return lp
 
 
-def pivoting_logpdf(
-    obs: ContactObservations,
-    params: EmissionParams,
-    gap_bias: float,
-    material: MaterialParams | None = None,
-    force: ForceEmissionParams | None = None,
-) -> np.ndarray:
+class Pivoting(ContactMode):
     """PIVOTING / twisting: normal-angular motion only (THEORY.md section 3).
 
     Channels:
@@ -508,149 +522,110 @@ def pivoting_logpdf(
       v_normal      ~ N(0, vel_sigma^2)
       v_tangent     ~ N(0, vel_sigma^2 I)            (small: not sliding)
       omega_normal  ~ two-component mixture peaked at +/- pivot_speed (spin about the
-                      normal; sign = handedness is uninformative -- see
-                      ``_log_offset_magnitude_1d``)
+                      normal; sign/handedness uninformative)
       omega_tangent ~ N(0, omega_sigma^2 I)          (small: not rolling)
     """
-    lp = _contact_gap_logpdf(obs, params, gap_bias)
-    lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-    lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
-    lp = lp + _log_offset_magnitude_1d(obs.omega_normal, params.pivot_speed, params.omega_sigma)
-    lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
-    if obs.normal_force is not None and force is not None:
-        lp = lp + _force_log_density(obs, PIVOTING, force)  # measured-force channel (DESIGN.md II.A)
-    return lp
+
+    name = PIVOTING
+
+    def kinematic_log_density(self, obs, params, gap_bias):
+        lp = _contact_gap_logpdf(obs, params, gap_bias)
+        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
+        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
+        lp = lp + _log_offset_magnitude_1d(obs.omega_normal, params.pivot_speed, params.omega_sigma)
+        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
+        return lp
 
 
-def rolling_logpdf(
-    obs: ContactObservations,
-    params: EmissionParams,
-    gap_bias: float,
-    material: MaterialParams | None = None,
-    force: ForceEmissionParams | None = None,
-) -> np.ndarray:
+class Rolling(ContactMode):
     """ROLLING: tangential-linear COUPLED to tangential-angular (THEORY.md section 3).
 
-    Rolling is *defined* by the cross-channel constraint ``v = omega x r`` -- the
-    tangential speed and the tangential angular rate are locked together; a
-    per-channel-independent model literally cannot represent it (section 3/4). We
-    encode the coupling as a Gaussian on the **rolling-constraint residual**
+    Rolling is *defined* by the cross-channel constraint ``v = omega x r`` -- the tangential
+    speed and the tangential spin are locked together, so a per-channel-independent model
+    literally cannot represent it (s.3/s.4). We encode the coupling as a Gaussian on the
+    rolling-constraint RESIDUAL
 
         r_res = |v_tangent| - roll_radius * |omega_tangent|   ~  N(0, roll_sigma^2)
 
-    while leaving each magnitude itself broad so the mode rewards the *correlation*,
+    while leaving each tangential magnitude broad, so the mode rewards the *correlation*,
     not any particular speed.
 
     Channels:
       gap           ~ split-normal about gap_bias
       v_normal      ~ N(0, vel_sigma^2)              (pinned: not separating)
-      v_tangent     ~ broad isotropic prior N(0, free_vel_sigma^2 I) on its magnitude/
-                      direction PLUS the coupling residual N(r_res; 0, roll_sigma^2)
-      omega_tangent ~ broad isotropic prior N(0, free_omega_sigma^2 I)
+      v_tangent     ~ broad N(0, free_vel_sigma^2 I) magnitude prior + the coupling residual
+      omega_tangent ~ broad N(0, free_omega_sigma^2 I) magnitude prior
       omega_normal  ~ N(0, omega_sigma^2)            (small: a pure roll has no spin)
 
-    Note on properness: the residual factor is a 1-D Gaussian in the scalar ``r_res``,
-    but ``r_res`` is a function of *both* tangential vectors, so multiplying it onto the
-    broad 2-D priors removes mass from the joint -- the product over ``(v_t, omega_t)``
-    integrates to ``Z_res`` (~0.66 at the defaults), NOT 1. Because every other state's
-    column integrates to 1, that missing normalizer would not cancel in the cross-state
-    likelihood ratio of THEORY.md section 4 and would hand ROLLING a parameter-dependent
-    offset on every frame. We therefore subtract ``log(Z_res)`` (computed once and cached
-    by ``_log_rolling_residual_normalizer``) so this column is itself a proper, normalized
-    coupling-aware joint density -- not a product of independent per-channel marginals --
-    and stays comparable to the other states' columns.
+    Properness: the residual is a 1-D Gaussian in a scalar that depends on BOTH tangential
+    vectors, so multiplying it onto the broad 2-D priors removes mass -- the joint over
+    ``(v_t, omega_t)`` integrates to ``Z_res`` (~0.66 at defaults), not 1. Since every other
+    column integrates to 1, that offset would not cancel in the s.4 likelihood ratio, so we
+    subtract ``log(Z_res)`` (computed once and cached by ``_log_rolling_residual_normalizer``)
+    -- making this a proper coupling-aware joint density, not a product of independent
+    marginals, and so comparable to the other modes' columns.
     """
-    v_t = np.asarray(obs.v_tangent, dtype=float)
-    w_t = np.asarray(obs.omega_tangent, dtype=float)
-    speed_t = np.sqrt(np.sum(v_t * v_t, axis=-1))
-    omega_t = np.sqrt(np.sum(w_t * w_t, axis=-1))
-    residual = speed_t - params.roll_radius * omega_t
 
-    log_z_res = _log_rolling_residual_normalizer(
-        params.free_vel_sigma,
-        params.free_omega_sigma,
-        params.roll_radius,
-        params.roll_sigma,
-    )
+    name = ROLLING
 
-    lp = _contact_gap_logpdf(obs, params, gap_bias)
-    lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-    lp = lp + _log_normal_2d_iso(v_t, params.free_vel_sigma)  # broad magnitude prior
-    lp = lp + _log_normal_2d_iso(w_t, params.free_omega_sigma)  # broad magnitude prior
-    lp = lp + _log_normal_1d(residual, 0.0, params.roll_sigma)  # the defining coupling
-    lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
-    lp = lp - log_z_res  # renormalize: make the coupling-aware joint integrate to 1
-    if obs.normal_force is not None and force is not None:
-        lp = lp + _force_log_density(obs, ROLLING, force)  # measured-force channel (DESIGN.md II.A)
-    return lp
+    def kinematic_log_density(self, obs, params, gap_bias):
+        v_t = np.asarray(obs.v_tangent, dtype=float)
+        w_t = np.asarray(obs.omega_tangent, dtype=float)
+        speed_t = np.sqrt(np.sum(v_t * v_t, axis=-1))
+        omega_t = np.sqrt(np.sum(w_t * w_t, axis=-1))
+        residual = speed_t - params.roll_radius * omega_t  # the rolling-constraint residual
+
+        log_z_res = _log_rolling_residual_normalizer(
+            params.free_vel_sigma, params.free_omega_sigma, params.roll_radius, params.roll_sigma
+        )
+        lp = _contact_gap_logpdf(obs, params, gap_bias)
+        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
+        lp = lp + _log_normal_2d_iso(v_t, params.free_vel_sigma)      # broad magnitude prior
+        lp = lp + _log_normal_2d_iso(w_t, params.free_omega_sigma)    # broad magnitude prior
+        lp = lp + _log_normal_1d(residual, 0.0, params.roll_sigma)    # the defining coupling
+        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
+        lp = lp - log_z_res                                          # renormalize the joint
+        return lp
 
 
-def impact_logpdf(
-    obs: ContactObservations,
-    params: EmissionParams,
-    gap_bias: float,
-    material: MaterialParams | None = None,
-    force: ForceEmissionParams | None = None,
-) -> np.ndarray:
+class Impact(ContactMode):
     """IMPACT: a short-lived transient at touchdown/break (THEORY.md section 6).
 
-    The signature is a large (closing) normal velocity at a gap near the bias but
-    *wider* than sustained contact (the body is crossing g~0 with momentum, so the
-    instantaneous gap is less tightly pinned). Other channels are broad.
+    The signature is a large (closing) normal velocity at a gap near the bias but WIDER than
+    sustained contact -- the body crosses g~0 with momentum, so the instantaneous gap is less
+    tightly pinned. Other channels are broad.
 
     Channels:
-      gap           ~ split-normal about gap_bias, but with WIDER scales
-                      (separation 2x sigma_gap, penetration 2x sigma_pen) -- impacts
+      gap           ~ split-normal about gap_bias, but with WIDER scales (2x): impacts
                       straddle the surface rather than rest on it.
-      v_normal      ~ two-component mixture peaked at +/- impact_speed (large normal
-                      closing/rebound speed; sign uninformative -- see
-                      ``_log_offset_magnitude_1d``)
-      v_tangent     ~ broad isotropic prior N(0, free_vel_sigma^2 I)
+      v_normal      ~ two-component mixture peaked at +/- impact_speed (large closing/rebound)
+      v_tangent     ~ broad N(0, free_vel_sigma^2 I)
       omega_normal  ~ broad N(0, free_omega_sigma^2)
-      omega_tangent ~ broad isotropic prior N(0, free_omega_sigma^2 I)
+      omega_tangent ~ broad N(0, free_omega_sigma^2 I)
     """
-    lp = _log_split_normal_gap(
-        obs.gap,
-        gap_bias,
-        2.0 * params.gap_sigma_gap,
-        2.0 * params.gap_sigma_pen,
-    )
-    lp = lp + _log_offset_magnitude_1d(obs.v_normal, params.impact_speed, params.vel_sigma)
-    lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
-    lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
-    lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
-    if obs.normal_force is not None and force is not None:
-        lp = lp + _force_log_density(obs, IMPACT, force)  # measured-force channel (DESIGN.md II.A)
-    return lp
+
+    name = IMPACT
+
+    def kinematic_log_density(self, obs, params, gap_bias):
+        lp = _log_split_normal_gap(
+            obs.gap, gap_bias, 2.0 * params.gap_sigma_gap, 2.0 * params.gap_sigma_pen
+        )
+        lp = lp + _log_offset_magnitude_1d(obs.v_normal, params.impact_speed, params.vel_sigma)
+        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
+        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
+        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
+        return lp
 
 
 # --------------------------------------------------------------------------------------
 # Registry + assembly
 # --------------------------------------------------------------------------------------
 
-#: state-name -> builder(obs, params, gap_bias, material, force) -> (T,) log-density.
-#: Each builder is independently testable; ``log_emissions`` just stacks the requested
-#: columns in the order given. ``force`` (a ForceEmissionParams or None) is the optional,
-#: gated measured-force term (DESIGN.md PART II.A); None => no force factor.
-STATE_BUILDERS: dict[
-    str,
-    Callable[
-        [
-            ContactObservations,
-            EmissionParams,
-            float,
-            MaterialParams | None,
-            ForceEmissionParams | None,
-        ],
-        np.ndarray,
-    ],
-] = {
-    FREE: free_logpdf,
-    STATIC: static_logpdf,
-    SLIDING: sliding_logpdf,
-    PIVOTING: pivoting_logpdf,
-    ROLLING: rolling_logpdf,
-    IMPACT: impact_logpdf,
+#: mode-name -> the ContactMode generative model. ``log_emissions`` stacks the requested
+#: columns in order; each mode is independently constructable and testable. ``force`` (a
+#: ForceEmissionParams or None) is the optional gated measured-force term (DESIGN.md II.A).
+MODES: dict[str, ContactMode] = {
+    m.name: m for m in (Free(), Static(), Sliding(), Pivoting(), Rolling(), Impact())
 }
 
 
@@ -706,11 +681,10 @@ def log_emissions(
     out = np.empty((T, len(states)), dtype=float)
     for j, name in enumerate(states):
         try:
-            builder = STATE_BUILDERS[name]
+            mode = MODES[name]
         except KeyError as exc:  # pragma: no cover - defensive
             raise KeyError(
-                f"no emission builder registered for state {name!r}; "
-                f"known states: {sorted(STATE_BUILDERS)}"
+                f"no contact mode registered for state {name!r}; known modes: {sorted(MODES)}"
             ) from exc
-        out[:, j] = builder(obs, params, gap_bias, material, force)
+        out[:, j] = mode.log_density(obs, params, gap_bias, material, force)
     return out

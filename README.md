@@ -71,18 +71,18 @@ See THEORY.md for the rationale behind every clause above.
 | [`contact/signals.py`](contact/signals.py) | time-aware smoothing & robust differentiation | §6 |
 | [`contact/geometry.py`](contact/geometry.py) | body-pair → support-relative gap + twist (the resolver narrow waist) | §1, §3 |
 | [`contact/geometry_resolvers.py`](contact/geometry_resolvers.py) | contact-geometry fidelity ladder: `FlatRegion` / `SpherePlane` / `SphereSphere` / `BoxPlane` / `MeshPlane` / `MeshConvex` | DESIGN |
-| [`contact/mesh_collision.py`](contact/mesh_collision.py) | convex GJK distance + EPA penetration kernel | DESIGN §3 |
-| [`contact/emissions.py`](contact/emissions.py) | per-mode likelihoods (rolling coupling; the optional force factor) | §3, §4 |
-| [`contact/hmm.py`](contact/hmm.py) | log-space forward–backward + Viterbi | §5 |
+| [`contact/mesh_collision.py`](contact/mesh_collision.py) | convex collision (signed distance + penetration) via [`coal`](https://github.com/coal-library/coal) | DESIGN §3 |
+| [`contact/emissions.py`](contact/emissions.py) | the contact modes as generative models: `ContactMode` → `Free`/`Static`/`Sliding`/`Pivoting`/`Rolling`/`Impact` (rolling coupling; optional force factor) | §3, §4 |
+| [`contact/hmm.py`](contact/hmm.py) | the `HMM` engine (a `TemporalSmoother`): log-space forward–backward + Viterbi | §5 |
 | [`contact/transitions.py`](contact/transitions.py) | gap-gated, state-dependent transition tensors | §5 |
-| [`contact/hsmm.py`](contact/hsmm.py) | explicit-duration (semi-Markov) decoding | §5 |
+| [`contact/hsmm.py`](contact/hsmm.py) | the `SemiMarkovHMM` engine: explicit-duration (semi-Markov) decoding | §5 |
 | [`contact/events.py`](contact/events.py) | sub-frame touchdown / liftoff detection | §6 |
 | [`contact/impacts.py`](contact/impacts.py) | matched-filter impacts, restitution, force-as-measure | §6 |
 | [`contact/dynamics.py`](contact/dynamics.py) | friction cone, force-from-penetration, observability demo | §7 |
-| [`contact/model.py`](contact/model.py) | `ContactDetector`: EM + HMM/HSMM assembly | §5, §7 |
+| [`contact/model.py`](contact/model.py) | `ContactDetector`: EM calibration + `HMM`/`SemiMarkovHMM` assembly | §5, §7 |
 | [`contact/graph.py`](contact/graph.py) | multi-body contact graph + active-set inference | §8 |
 | [`contact/consistency.py`](contact/consistency.py) | soft energy/dissipation + balance priors | §8 |
-| [`contact/structure_inference.py`](contact/structure_inference.py) | exact + particle-filter active-set posterior | §8 |
+| [`contact/structure_inference.py`](contact/structure_inference.py) | `StructurePosterior`: exact + particle-filter active-set posterior (the multi-body analog of `HMM`) | §8 |
 | [`contact/mode_discovery.py`](contact/mode_discovery.py) | sticky HDP-HMM unsupervised mode discovery | §8 |
 | [`contact/uncertainty.py`](contact/uncertainty.py) | per-frame measurement-uncertainty tempering | §8 |
 | [`contact/dynamics_id.py`](contact/dynamics_id.py) | contact-implicit inverse dynamics + `infer_normal_force` (the force virtual sensor) | §8, DESIGN |
@@ -251,5 +251,6 @@ voi = value_of_information(
 #    "unobservable from kinematics → declare a force channel"
 ```
 
-See DESIGN.md for the build status (Phases 0–5, all ✅), per-fix evidence, and the one open
-frontier — watertight EPA for the degenerate coplanar box-vs-box penetration case.
+See DESIGN.md for the build status (Phases 0–5, all ✅) and the per-fix evidence. (The
+coplanar box-vs-box penetration case that was once the open frontier is now handled by the
+[`coal`](https://github.com/coal-library/coal) collision backend — exact to the prior kernel.)
