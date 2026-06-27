@@ -56,67 +56,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cvxpy as cp
 import numpy as np
-from scipy.optimize import minimize, nnls
 
 from .config import DetectorConfig, InverseDynamicsParams
+from .geometry import quat_conjugate as _quat_conjugate
+from .geometry import quat_mul as _quat_mul
+from .geometry import quat_to_matrix as _quat_to_matrix
 from .signals import derivative, gaussian_smooth
 from .types import InverseDynamicsResult, PoseTrajectory, RawScenario
 
 # --------------------------------------------------------------------------------------
-# Quaternion helpers.
-#
-# ``contact.geometry`` owns the canonical scalar-first quaternion helpers, but the spec
-# permits this module to import only types/config/signals/numpy/scipy (NOT geometry).
-# So we MIRROR the two helpers we need -- the body->world rotation matrix and the
-# angular-velocity-from-quaternion-stream construction -- minimally and identically to
-# ``contact.geometry`` (same scalar-first (w,x,y,z) convention, same antipodal-cover
-# handling). They are kept byte-for-byte consistent with that module on purpose; if the
-# package later exports them as a leaf they should be imported instead of mirrored.
+# Quaternion helpers are imported from contact.geometry (the canonical scalar-first set);
+# only ``_continuous_quat`` below is specific to this module's differentiation pipeline.
 # --------------------------------------------------------------------------------------
-
-
-def _quat_to_matrix(q: np.ndarray) -> np.ndarray:
-    """Rotation matrix/matrices ``R(q)`` with ``v_world = R(q) @ v_local`` (scalar-first).
-
-    Mirror of :func:`contact.geometry.quat_to_matrix`. Defensive normalization so a
-    non-unit input still yields a proper rotation.
-    """
-    q = np.asarray(q, dtype=float)
-    q = q / np.linalg.norm(q, axis=-1, keepdims=True)
-    w, x, y, z = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
-    R = np.empty(q.shape[:-1] + (3, 3), dtype=float)
-    R[..., 0, 0] = 1.0 - 2.0 * (y * y + z * z)
-    R[..., 0, 1] = 2.0 * (x * y - z * w)
-    R[..., 0, 2] = 2.0 * (x * z + y * w)
-    R[..., 1, 0] = 2.0 * (x * y + z * w)
-    R[..., 1, 1] = 1.0 - 2.0 * (x * x + z * z)
-    R[..., 1, 2] = 2.0 * (y * z - x * w)
-    R[..., 2, 0] = 2.0 * (x * z - y * w)
-    R[..., 2, 1] = 2.0 * (y * z + x * w)
-    R[..., 2, 2] = 1.0 - 2.0 * (x * x + y * y)
-    return R
-
-
-def _quat_conjugate(q: np.ndarray) -> np.ndarray:
-    """Conjugate (inverse for unit quaternions). Mirror of geometry.quat_conjugate."""
-    q = np.asarray(q, dtype=float)
-    out = q.copy()
-    out[..., 1:] = -out[..., 1:]
-    return out
-
-
-def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Hamilton product ``a*b`` of scalar-first quaternions. Mirror of geometry.quat_mul."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    aw, ax, ay, az = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
-    bw, bx, by, bz = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
-    w = aw * bw - ax * bx - ay * by - az * bz
-    x = aw * bx + ax * bw + ay * bz - az * by
-    y = aw * by - ax * bz + ay * bw + az * bx
-    z = aw * bz + ax * by - ay * bx + az * bw
-    return np.stack([w, x, y, z], axis=-1)
 
 
 def _continuous_quat(quat: np.ndarray) -> np.ndarray:
@@ -519,21 +472,18 @@ def _solve_frame(
     and leaving their forces at 0.
 
     Solver. The objective is a convex quadratic and the friction cone is a convex
-    second-order cone, so this is a small **second-order-cone-constrained least squares**.
-    We solve it with ``scipy.optimize.minimize`` (SLSQP) which handles the nonlinear cone
-    inequality directly (the true elliptic Coulomb cone of s.7, not a pyramidal
-    linearization). For warm-starting and the common normal-only case we first solve the
-    NORMAL-only sub-problem in closed form via non-negative least squares
-    (``scipy.optimize.nnls``), which already satisfies ``f_n >= 0`` and gives SLSQP a
-    feasible, near-optimal initial point (friction then only refines the tangential part).
+    second-order cone, so this is a small **second-order-cone program**, solved with
+    cvxpy + Clarabel. Clarabel returns the global optimum directly (the true elliptic
+    Coulomb cone of s.7, not a pyramidal linearization), so none of the warm-start /
+    iterate-tie-break / feasibility-projection scaffolding a general NLP solver needs is
+    required here.
 
     Indeterminacy (s.7). When the active candidates over-determine the wrench (>6 force
     components for one 6-wrench, e.g. a box on four corners = 12 components) the data fit
     has a null space: many ``f`` give the same ``G f``. The Tikhonov term ``reg*||f||^2``
-    selects the unique **minimum-norm** member, the honest default. The per-candidate
-    split among redundant co-located candidates is therefore the regularizer's choice,
-    NOT a measurement -- exactly the unobservable load split of s.7 that only compliance
-    can pin.
+    makes the objective strictly convex, so the solver returns the unique **minimum-norm**
+    member -- the honest default; the split among redundant co-located candidates is the
+    regularizer's choice, NOT a measurement (the unobservable load split of s.7).
     """
     K = G.shape[1] // 3
     active_idx = np.flatnonzero(active_mask)
@@ -546,79 +496,24 @@ def _solve_frame(
     Ga = G[:, cols]                                                   # (6, 3*na)
     na = active_idx.size
 
-    # --- warm start: normal-only NNLS (f_n >= 0), tangential set to 0 ----------------
-    # Columns 0,3,6,... within Ga are the normal directions of the active candidates.
-    n_cols = np.arange(na) * 3
-    Gn = Ga[:, n_cols]                                                # (6, na) normal block
-    try:
-        fn0, _ = nnls(Gn, w)
-    except Exception:
-        fn0 = np.maximum(0.0, np.linalg.lstsq(Gn, w, rcond=None)[0])
-    x0 = np.zeros(3 * na)
-    x0[n_cols] = fn0
-
-    # If friction is irrelevant (no tangential demand can help) or mu<=0, the NNLS normal
-    # solution already obeys all constraints (cone collapses to f_t=0); return it.
-    if mu <= 0.0:
-        f_full[cols] = x0
-        return f_full
-
-    GtG = Ga.T @ Ga
-    Gtw = Ga.T @ w
-    wtw = float(w @ w)
-
-    def objective(x: np.ndarray) -> float:
-        # ||Ga x - w||^2 + reg ||x||^2  (expanded for a cheap, smooth gradient).
-        return float(x @ (GtG @ x) - 2.0 * (Gtw @ x) + wtw + reg * (x @ x))
-
-    def objective_grad(x: np.ndarray) -> np.ndarray:
-        return 2.0 * (GtG @ x) - 2.0 * Gtw + 2.0 * reg * x
-
-    # Constraints: per active candidate, f_n >= 0 and mu*f_n - ||f_t|| >= 0 (cone).
+    # Decision variable: the active candidates' stacked (f_n, f_t1, f_t2) components.
+    f = cp.Variable(3 * na)
     constraints = []
     for j in range(na):
         nj = 3 * j
-
-        def fn_nonneg(x, nj=nj):
-            return x[nj]
-
-        def cone(x, nj=nj):
-            ft = x[nj + 1 : nj + 3]
-            return mu * x[nj] - np.sqrt(ft @ ft + 1e-18)
-
-        constraints.append({"type": "ineq", "fun": fn_nonneg})
-        constraints.append({"type": "ineq", "fun": cone})
-
-    res = minimize(
-        objective,
-        x0,
-        jac=objective_grad,
-        constraints=constraints,
-        method="SLSQP",
-        options={"maxiter": 1000, "ftol": 1e-10},
-    )
-    # Keep SLSQP's iterate whenever it actually improves on the NNLS warm start, even if
-    # SLSQP reports success=False. On hard (over-determined, large-K) frames SLSQP can hit
-    # its iteration limit (status 9) with an essentially converged x that beats x0 by
-    # orders of magnitude; the old `res.x if res.success else x0` discarded that good
-    # iterate and fell back to the collapsed, non-minimum-norm normal-only warm start,
-    # spuriously inflating the wrench residual and corrupting the recovered force split /
-    # active set. Comparing the (regularized) objective is the honest tie-breaker: x0 is
-    # always feasible, so res.x is only adopted when it is no worse. The defensive cone /
-    # normal projection below still clamps any tiny infeasibility SLSQP may have left.
-    x = res.x if objective(res.x) <= objective(x0) else x0
-    # Defensive feasibility projection: clamp tiny negative normals and shrink any
-    # tangential force that overshoots its cone (SLSQP can land a hair outside).
-    for j in range(na):
-        nj = 3 * j
-        x[nj] = max(0.0, x[nj])
-        ft = x[nj + 1 : nj + 3]
-        cap = mu * x[nj]
-        ftn = np.linalg.norm(ft)
-        if ftn > cap and ftn > 1e-12:
-            x[nj + 1 : nj + 3] = ft * (cap / ftn)
-
-    f_full[cols] = x
+        constraints.append(f[nj] >= 0.0)                             # Signorini: f_n >= 0 (s.2)
+        if mu > 0.0:
+            constraints.append(cp.SOC(mu * f[nj], f[nj + 1 : nj + 3]))   # Coulomb cone (s.7)
+        else:
+            constraints.append(f[nj + 1 : nj + 3] == 0.0)            # no friction => no tangential
+    objective = cp.Minimize(cp.sum_squares(Ga @ f - w) + reg * cp.sum_squares(f))
+    try:
+        cp.Problem(objective, constraints).solve(solver=cp.CLARABEL)
+    except cp.error.SolverError:
+        return f_full                                                # solver failure -> no force
+    if f.value is None:
+        return f_full                                                # infeasible (never: f=0 is feasible)
+    f_full[cols] = np.asarray(f.value)
     return f_full
 
 

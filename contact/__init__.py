@@ -81,6 +81,16 @@ from .dynamics_id import (
 from .impacts import detect_impacts
 from .transitions import base_transition_matrix, gated_transition_tensor
 
+# The method's two halves, made explicit. The generic, contact-free inference ENGINES
+# (THEORY.md s.5): an ``HMM`` / ``SemiMarkovHMM`` is a ``TemporalSmoother`` that turns a
+# per-frame log-emission matrix into a smoothed posterior + a MAP path. The contact SCIENCE
+# they consume (s.3/s.4): ``MODES`` is the bank of per-mode generative models, each a
+# ``ContactMode`` proper density over the (gap, twist) observation; ``log_emissions`` stacks
+# them into the matrix the engine smooths.
+from .emissions import MODES, ContactMode, log_emissions
+from .hmm import HMM, TemporalSmoother
+from .hsmm import SemiMarkovHMM
+
 # The multi-body contact-graph detector (THEORY.md s.8, rung 5): the single-pair detector
 # lifted to a whole contact graph, inferring the joint active-set posterior over the 2^E
 # structures. `build_candidate_edges` is the proximity broad-phase; `detect_scene` is the
@@ -96,7 +106,11 @@ from .graph import build_candidate_edges, detect_scene
 #   * emission_tempering             -- per-frame measurement-uncertainty tempering of the
 #                                       emissions (noisy/occluded frames contribute less).
 from .mode_discovery import discover_modes
-from .structure_inference import exact_active_sets, particle_filter_active_sets
+from .structure_inference import (
+    StructurePosterior,
+    exact_active_sets,
+    particle_filter_active_sets,
+)
 from .uncertainty import emission_tempering
 
 # Synced real-time side-by-side animations (scene + signals + detections).
@@ -158,6 +172,13 @@ __all__ = [
     "observability_demo",
     "base_transition_matrix",
     "gated_transition_tensor",
+    # the inference engines (s.5) + the per-mode generative models (s.3/s.4)
+    "HMM",
+    "SemiMarkovHMM",
+    "TemporalSmoother",
+    "ContactMode",
+    "MODES",
+    "log_emissions",
     # contact-implicit inverse dynamics (THEORY.md s.8, the north star), off by default
     "body_accelerations",
     "required_wrench",
@@ -168,5 +189,6 @@ __all__ = [
     "discover_modes",
     "exact_active_sets",
     "particle_filter_active_sets",
+    "StructurePosterior",
     "emission_tempering",
 ]

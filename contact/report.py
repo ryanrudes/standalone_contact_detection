@@ -114,25 +114,29 @@ def score(result: DetectionResult, truth: GroundTruth) -> dict:
 # --------------------------------------------------------------------------------------
 
 
+def _mask_runs(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Start / end (inclusive) indices of each contiguous True run in a boolean ``mask``.
+
+    The single true-run finder shared by the interval and span/lane shaders: pad so leading
+    and trailing runs are captured, then read the rising/falling edges. Returns ``(starts,
+    ends)`` index arrays, empty for an empty or all-False mask.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    if mask.size == 0:
+        return np.empty(0, dtype=np.intp), np.empty(0, dtype=np.intp)
+    diffs = np.diff(np.concatenate(([False], mask, [False])).astype(np.int8))
+    return np.flatnonzero(diffs == 1), np.flatnonzero(diffs == -1) - 1
+
+
 def _true_contact_intervals(truth: GroundTruth) -> list[tuple[float, float]]:
     """Contiguous (t_start, t_end) runs where ``truth.in_contact`` is True.
 
     The ground-truth analogue of ``DetectionResult.intervals`` — the contact
     *segments* of the active set (THEORY.md §2), recovered from the per-frame mask.
     """
-    mask = np.asarray(truth.in_contact, dtype=bool)
     t = np.asarray(truth.t, dtype=float)
-    runs: list[tuple[float, float]] = []
-    if mask.size == 0:
-        return runs
-    # Edges where the mask flips; pad so leading/trailing runs are captured.
-    padded = np.concatenate(([False], mask, [False]))
-    diffs = np.diff(padded.astype(np.int8))
-    starts = np.flatnonzero(diffs == 1)
-    ends = np.flatnonzero(diffs == -1) - 1  # inclusive last in-contact index
-    for s, e in zip(starts, ends):
-        runs.append((float(t[s]), float(t[e])))
-    return runs
+    starts, ends = _mask_runs(truth.in_contact)
+    return [(float(t[s]), float(t[e])) for s, e in zip(starts, ends)]
 
 
 def _ascii_timeline(mask: np.ndarray, width: int = 72) -> str:
@@ -609,16 +613,10 @@ def _shade_mask(
     (THEORY.md §2) and for the per-frame stick/slip label behind the modes (§7). Only
     the first span carries the legend label so the legend stays a single entry.
     """
-    runs: list[tuple[float, float]] = []
-    if mask.size:
-        padded = np.concatenate(([False], mask.astype(bool), [False]))
-        diffs = np.diff(padded.astype(np.int8))
-        starts = np.flatnonzero(diffs == 1)
-        ends = np.flatnonzero(diffs == -1) - 1
-        for s, e in zip(starts, ends):
-            runs.append((float(t[s]), float(t[e])))
-    for k, (s, e) in enumerate(runs):
-        ax.axvspan(s, e, color=color, alpha=alpha, label=label if k == 0 else None)
+    starts, ends = _mask_runs(mask)
+    for k, (s, e) in enumerate(zip(starts, ends)):
+        ax.axvspan(float(t[s]), float(t[e]), color=color, alpha=alpha,
+                   label=label if k == 0 else None)
 
 
 def _shade_true_contact(ax, t: np.ndarray, mask: np.ndarray, label: str) -> None:
@@ -979,10 +977,7 @@ def _fill_lane(
     if mask.size == 0:
         return
     t = np.asarray(t, dtype=float).ravel()
-    padded = np.concatenate(([False], mask, [False]))
-    diffs = np.diff(padded.astype(np.int8))
-    starts = np.flatnonzero(diffs == 1)
-    ends = np.flatnonzero(diffs == -1) - 1
+    starts, ends = _mask_runs(mask)
     y0 = y - height / 2.0
     for s, e in zip(starts, ends):
         _add_rect(

@@ -43,58 +43,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from .signals import derivative, gaussian_smooth
 from .types import ContactGeometry, ContactObservations, PoseTrajectory, SupportSurface
 
 # --------------------------------------------------------------------------------------
-# Differentiation / smoothing primitives — delegated to contact.signals where present.
-#
-# THEORY.md s.4: we never observe truth; differentiating noisy positions amplifies the
-# noise, so we always smooth (in real *time*, not samples) before differencing. The
-# canonical leaf helpers live in contact.signals; we adapt to them by name and keep a
-# pure-numpy fallback so this module imports even before signals exists.
+# Differentiation/smoothing is delegated to the time-aware leaf helpers in contact.signals
+# (THEORY.md s.4: smooth in real time before differentiating, never raw finite differences).
 # --------------------------------------------------------------------------------------
-
-
-def _local_gaussian_smooth(x: np.ndarray, t: np.ndarray, sigma_time: float) -> np.ndarray:
-    """Fallback time-aware Gaussian smoother (see contact.signals for the canonical one)."""
-    if sigma_time <= 0.0:
-        return np.asarray(x, dtype=float)
-    x = np.asarray(x, dtype=float)
-    dt = t[:, None] - t[None, :]                  # (T, T) pairwise time offsets (s)
-    w = np.exp(-0.5 * (dt / sigma_time) ** 2)     # Gaussian weights in real time
-    w /= w.sum(axis=1, keepdims=True)             # row-normalize -> weighted mean
-    return w @ x
-
-
-def _local_derivative(x: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Fallback central-difference d/dt along the leading time axis."""
-    return np.gradient(np.asarray(x, dtype=float), t, axis=0)
-
-
-def _resolve_signals():
-    """Return ``(smooth_fn, derivative_fn)`` from contact.signals, else local fallbacks.
-
-    The spec mandates differentiating through contact.signals; we look up the obvious
-    leaf names (mirroring the toy main.py: ``gaussian_smooth(x, t, sigma)`` and
-    ``derivative(x, t)``) and degrade gracefully if signals is not yet importable.
-    """
-    smooth_fn = _local_gaussian_smooth
-    deriv_fn = _local_derivative
-    try:  # pragma: no cover - exercised once contact.signals lands
-        from . import signals as _signals
-    except Exception:
-        return smooth_fn, deriv_fn
-    for name in ("gaussian_smooth", "smooth", "time_smooth"):
-        fn = getattr(_signals, name, None)
-        if callable(fn):
-            smooth_fn = fn
-            break
-    for name in ("derivative", "differentiate", "ddt", "deriv"):
-        fn = getattr(_signals, name, None)
-        if callable(fn):
-            deriv_fn = fn
-            break
-    return smooth_fn, deriv_fn
 
 
 # --------------------------------------------------------------------------------------
@@ -220,7 +175,7 @@ def quat_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 
 def _angular_velocity_world(
-    quat: np.ndarray, t: np.ndarray, smooth_fn, deriv_fn, sigma_time: float
+    quat: np.ndarray, t: np.ndarray, sigma_time: float
 ) -> np.ndarray:
     """World-frame angular velocity ``omega(t)`` from a quaternion sequence.
 
@@ -245,9 +200,9 @@ def _angular_velocity_world(
     flip = np.cumprod(np.sign(np.sum(q[1:] * q[:-1], axis=1) + 1e-300))
     q[1:] *= np.where(flip[:, None] < 0.0, -1.0, 1.0)
 
-    q_smooth = np.asarray(smooth_fn(q, t, sigma_time), dtype=float)
+    q_smooth = gaussian_smooth(q, t, sigma_time)
     q_smooth = q_smooth / np.linalg.norm(q_smooth, axis=-1, keepdims=True)
-    dq = np.asarray(deriv_fn(q_smooth, t), dtype=float)          # (T,4)
+    dq = derivative(q_smooth, t)                                 # (T,4)
     # omega_quat = 2 * dq * conj(q); its scalar part is ~0, vector part is omega_world.
     omega_quat = 2.0 * quat_mul(dq, quat_conjugate(q_smooth))    # (T,4)
     return omega_quat[..., 1:]                                   # drop the (~0) scalar
@@ -437,8 +392,6 @@ def observe(
 
         geometry = FlatRegion(surface, contact_point_local)
 
-    smooth_fn, deriv_fn = _resolve_signals()
-
     t = np.asarray(moving.t, dtype=float)
     mov_pos = np.asarray(moving.position, dtype=float)            # (T,3) world (moving body origin)
     sup_pos = np.asarray(support.position, dtype=float)            # (T,3) world
@@ -474,9 +427,7 @@ def observe(
     # MIGRATING resolver needs it for the analytic moving-point velocity below; step 6 reuses
     # this exact same array. Moving the call up does not change its value (it is a pure function
     # of the quaternion stream), so the non-migrating path stays byte-identical.
-    omega_moving = _angular_velocity_world(
-        mov_quat, t, smooth_fn, deriv_fn, vel_smooth_time
-    )                                                              # (T,3) world
+    omega_moving = _angular_velocity_world(mov_quat, t, vel_smooth_time)  # (T,3) world
 
     # --- Step 5: RELATIVE linear velocity of the coincident material points.
     # (a) Velocity of the moving material point.
@@ -488,21 +439,19 @@ def observe(
         # com = moving body origin and v_com its (smoothed/differentiated) linear velocity.
         # (For a FIXED point this equals d/dt(p) since d/dt(R @ cpl) = omega x (R @ cpl); the
         # formulas diverge only where the point genuinely migrates -- DESIGN.md PART II.D.)
-        v_com = deriv_fn(smooth_fn(mov_pos, t, vel_smooth_time), t)   # (T,3) world COM velocity
+        v_com = derivative(gaussian_smooth(mov_pos, t, vel_smooth_time), t)  # (T,3) world COM velocity
         v_moving_point = v_com + np.cross(omega_moving, p - mov_pos)  # (T,3) world
     else:
         # FIXED material point (FlatRegion / Sphere*): differentiate its smooth world
         # trajectory (THEORY.md s.4). This is the verbatim pre-Phase-2 path -> bit-identical.
-        v_moving_point = deriv_fn(smooth_fn(p, t, vel_smooth_time), t)  # (T,3) world
+        v_moving_point = derivative(gaussian_smooth(p, t, vel_smooth_time), t)  # (T,3) world
 
     # (b) Velocity of the support point momentarily coincident with p. A rigid body's
     #     material-point velocity is v_origin + omega x r, where r is the lever arm from
     #     the support origin to the contact point (THEORY.md s.3). v_origin and
     #     omega_support both come from the smoothed/differentiated support pose.
-    v_sup_origin = deriv_fn(smooth_fn(sup_pos, t, vel_smooth_time), t)  # (T,3) world
-    omega_support = _angular_velocity_world(
-        sup_quat, t, smooth_fn, deriv_fn, vel_smooth_time
-    )                                                              # (T,3) world
+    v_sup_origin = derivative(gaussian_smooth(sup_pos, t, vel_smooth_time), t)  # (T,3) world
+    omega_support = _angular_velocity_world(sup_quat, t, vel_smooth_time)  # (T,3) world
     r = p - sup_pos                                                # (T,3) lever arm (world)
     v_support_point = v_sup_origin + np.cross(omega_support, r)    # (T,3) world
 

@@ -60,7 +60,9 @@ fallback so this module imports stand-alone).
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial import ConvexHull, QhullError
 
+from .geometry import quat_to_matrix
 from .types import ContactEdge, MultiBodyScene
 
 __all__ = ["energy_budget", "energy_log_factor", "balance_log_factor"]
@@ -509,9 +511,9 @@ def _point_in_convex_polygon_margin(p_xy: np.ndarray, poly_xy: np.ndarray) -> fl
       * 2 vertices -> ``-distance`` to the segment (a line support, never strictly
         contains a point off the line).
 
-    For 3+ vertices we build the convex hull, orient it CCW, and take the minimum signed
-    distance to its edges (positive interior). This is a standard, dependency-free
-    point-in-convex-polygon margin.
+    For 3+ vertices we build the convex hull (``scipy.spatial.ConvexHull``) and take the
+    signed distance to its nearest facet half-space (positive interior) -- matching the old
+    monotone-chain edge distance to ~1e-15.
     """
     poly = np.asarray(poly_xy, dtype=float).reshape(-1, 2)
     p = np.asarray(p_xy, dtype=float).reshape(2)
@@ -530,64 +532,17 @@ def _point_in_convex_polygon_margin(p_xy: np.ndarray, poly_xy: np.ndarray) -> fl
         proj = a + s * ab
         return -float(np.hypot(*(p - proj)))
 
-    # 3+ points: convex hull (Andrew's monotone chain), then min signed edge distance.
-    hull = _convex_hull(poly)
-    if hull.shape[0] < 3:
-        # Collinear points collapsed to a segment.
-        return _point_in_convex_polygon_margin(p, hull)
-
-    # Orient CCW so "inside" is consistently the +left side of every directed edge.
-    if _signed_area(hull) < 0.0:
-        hull = hull[::-1]
-
-    margin = float("inf")
-    m = hull.shape[0]
-    for i in range(m):
-        a = hull[i]
-        b = hull[(i + 1) % m]
-        e = b - a
-        elen = float(np.hypot(*e))
-        if elen <= 1e-18:
-            continue
-        # Signed distance to the line through edge (a->b), +ve on the interior (left) side.
-        nrm = np.array([-e[1], e[0]]) / elen        # left normal of the directed edge
-        d = float((p - a) @ nrm)
-        margin = min(margin, d)
-    return margin
-
-
-def _convex_hull(points: np.ndarray) -> np.ndarray:
-    """2D convex hull (Andrew's monotone chain). Returns CCW-ish hull vertices ``(H, 2)``.
-
-    Pure-numpy, no scipy dependency required for the small point sets here.
-    """
-    pts = np.unique(np.asarray(points, dtype=float).reshape(-1, 2), axis=0)
-    if pts.shape[0] <= 2:
-        return pts
-    pts = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
-
-    def cross(o, a, b):
-        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-
-    lower: list[np.ndarray] = []
-    for p in pts:
-        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
-            lower.pop()
-        lower.append(p)
-    upper: list[np.ndarray] = []
-    for p in pts[::-1]:
-        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-            upper.pop()
-        upper.append(p)
-    hull = np.array(lower[:-1] + upper[:-1], dtype=float)
-    return hull
-
-
-def _signed_area(poly: np.ndarray) -> float:
-    """Shoelace signed area of polygon ``poly`` (``(N, 2)``); ``> 0`` for CCW order."""
-    x = poly[:, 0]
-    y = poly[:, 1]
-    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+    # 3+ points: scipy convex hull; the signed inside-margin is the (negated) maximum over
+    # the hull's outward facet half-spaces -- > 0 strictly inside (depth), <= 0 on/outside.
+    # `hull.equations` rows are unit-normal [nx, ny, offset] (the idiom mesh_collision uses).
+    try:
+        hull = ConvexHull(poly)
+    except QhullError:
+        # Degenerate (collinear) cloud: collapse to the segment case on its extremes.
+        order = np.lexsort((poly[:, 1], poly[:, 0]))
+        return _point_in_convex_polygon_margin(p, poly[order][[0, -1]])
+    eqs = hull.equations                            # (F, 3): outward unit normal + offset
+    return -float(np.max(eqs[:, :2] @ p + eqs[:, 2]))
 
 
 def _edge_contact_point_world(scene: MultiBodyScene, edge: ContactEdge, k: int) -> np.ndarray | None:
@@ -607,17 +562,7 @@ def _edge_contact_point_world(scene: MultiBodyScene, edge: ContactEdge, k: int) 
     if pos.ndim != 2 or k >= pos.shape[0] or quat.ndim != 2 or k >= quat.shape[0]:
         return None
     cpl = np.asarray(edge.contact_point_local, dtype=float).reshape(3)
-    q = quat[k]
-    q = q / (np.linalg.norm(q) + 1e-300)
-    w, x, y, z = q
-    R = np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-        ]
-    )
-    return pos[k] + R @ cpl
+    return pos[k] + quat_to_matrix(quat[k]) @ cpl
 
 
 def _scene_com_world(scene: MultiBodyScene, masses, k: int) -> np.ndarray | None:

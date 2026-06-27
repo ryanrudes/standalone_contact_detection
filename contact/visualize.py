@@ -441,6 +441,32 @@ def _norm_rows(rows, n):
     return labels, np.asarray(mat)
 
 
+def _heatmap_panel(ax, mat, labels, cmap: str, t0: float, t1: float, ylabel: str) -> None:
+    """Draw one normalized (0..1) ``channels x time`` heatmap row -- the shared magma feature
+    and viridis posterior panel used by the scenario and reel animations."""
+    ax.imshow(mat, aspect="auto", cmap=cmap, vmin=0, vmax=1,
+              extent=[t0, t1, len(labels), 0], interpolation="nearest")
+    ax.set_yticks(np.arange(len(labels)) + 0.5)
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.set_ylabel(ylabel, fontsize=9)
+
+
+def _save_anim(fig, update, n_frames: int, out_path, fps: int, bitrate: int = 3600):
+    """Build the FuncAnimation, save by file extension (.gif -> Pillow, else FFmpeg), close.
+
+    The single render/encode tail shared by every animation builder.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib import animation
+
+    anim = animation.FuncAnimation(fig, update, frames=n_frames, interval=1000.0 / fps, blit=False)
+    writer = (animation.PillowWriter(fps=fps) if str(out_path).lower().endswith(".gif")
+              else animation.FFMpegWriter(fps=fps, bitrate=bitrate))
+    anim.save(str(out_path), writer=writer, dpi=100)
+    plt.close(fig)
+    return out_path
+
+
 def _build_animation(t, frames, feature_rows, state_post, state_labels, contact_post,
                      map_state, truth_in_contact, events, title, fps, out_path,
                      extra_strips=None, impulses=None, body_colors=None):
@@ -495,21 +521,13 @@ def _build_animation(t, frames, feature_rows, state_post, state_labels, contact_
     axes = []
     # --- feature heatmap: every raw channel the detector consumes (THEORY.md s.3) ---
     ax_f = fig.add_subplot(gs[0, 1])
-    ax_f.imshow(feat_mat, aspect="auto", cmap="magma", vmin=0, vmax=1,
-                extent=[t0, t1, nF, 0], interpolation="nearest")
-    ax_f.set_yticks(np.arange(nF) + 0.5)
-    ax_f.set_yticklabels(feat_labels, fontsize=8)
-    ax_f.set_ylabel("features", fontsize=9)
+    _heatmap_panel(ax_f, feat_mat, feat_labels, "magma", t0, t1, "features")
     ax_f.set_title(title, fontsize=11, loc="left")
     axes.append(ax_f)
 
     # --- state-posterior heatmap: the model's full belief over modes (THEORY.md s.4/s.5) ---
     ax_s = fig.add_subplot(gs[1, 1], sharex=ax_f)
-    ax_s.imshow(state_post.T, aspect="auto", cmap="viridis", vmin=0, vmax=1,
-                extent=[t0, t1, nS, 0], interpolation="nearest")
-    ax_s.set_yticks(np.arange(nS) + 0.5)
-    ax_s.set_yticklabels(state_labels, fontsize=8)
-    ax_s.set_ylabel("P(state)", fontsize=9)
+    _heatmap_panel(ax_s, state_post.T, state_labels, "viridis", t0, t1, "P(state)")
     axes.append(ax_s)
 
     # --- contact answer: P(contact) + true-contact + MAP mode ribbon ---
@@ -565,12 +583,7 @@ def _build_animation(t, frames, feature_rows, state_post, state_labels, contact_
             ph.set_xdata([t[i], t[i]])
         return [im, mode_txt, flash_txt, *playheads]
 
-    anim = animation.FuncAnimation(fig, update, frames=len(idx), interval=1000.0 / fps, blit=False)
-    writer = (animation.PillowWriter(fps=fps) if str(out_path).lower().endswith(".gif")
-              else animation.FFMpegWriter(fps=fps, bitrate=3600))
-    anim.save(str(out_path), writer=writer, dpi=100)
-    plt.close(fig)
-    return out_path
+    return _save_anim(fig, update, len(idx), out_path, fps)
 
 
 def animate_scenario(name, out_path, seed=0, hz=100.0, fps=50, config=None,
@@ -794,9 +807,7 @@ def _clip_animation(frames, lo, rate, ev, out_path, fps, slowmo):
         head.set_xdata([tw[i], tw[i]])
         return [im, head]
 
-    anim = animation.FuncAnimation(fig, update, frames=n, interval=1000.0 / fps, blit=False)
-    anim.save(str(out_path), writer=animation.FFMpegWriter(fps=fps, bitrate=3200), dpi=100)
-    plt.close(fig)
+    _save_anim(fig, update, n, out_path, fps, bitrate=3200)
 
 
 def animate_event_clips(name, outdir="media", seed=0, hz=100.0, config=None,
@@ -853,15 +864,10 @@ def _build_reel_animation(frames, sched, panel, color_map, title, out_path, fps,
                           ha="left", va="top", fontsize=9, fontweight="bold", color=rgb)
 
     ax_f = fig.add_subplot(gs[0, 1])
-    ax_f.imshow(feat_mat, aspect="auto", cmap="magma", vmin=0, vmax=1, extent=[t0, t1, nF, 0],
-                interpolation="nearest")
-    ax_f.set_yticks(np.arange(nF) + 0.5); ax_f.set_yticklabels(feat_labels, fontsize=8)
-    ax_f.set_ylabel("features", fontsize=9); ax_f.set_title(title, fontsize=11, loc="left")
+    _heatmap_panel(ax_f, feat_mat, feat_labels, "magma", t0, t1, "features")
+    ax_f.set_title(title, fontsize=11, loc="left")
     ax_s = fig.add_subplot(gs[1, 1], sharex=ax_f)
-    ax_s.imshow(state_post.T, aspect="auto", cmap="viridis", vmin=0, vmax=1, extent=[t0, t1, nS, 0],
-                interpolation="nearest")
-    ax_s.set_yticks(np.arange(nS) + 0.5); ax_s.set_yticklabels(state_labels, fontsize=8)
-    ax_s.set_ylabel("P(state)", fontsize=9)
+    _heatmap_panel(ax_s, state_post.T, state_labels, "viridis", t0, t1, "P(state)")
     ax_c = fig.add_subplot(gs[2, 1], sharex=ax_f)
     ax_c.plot(t, cpost, color="black", lw=1.6, label="P(contact)")
     for s, e, m in _mode_runs(mst):
@@ -915,10 +921,7 @@ def _build_reel_animation(frames, sched, panel, color_map, title, out_path, fps,
             ph.set_xdata([t[idx], t[idx]])
         return [im, banner, hint, *playheads]
 
-    anim = animation.FuncAnimation(fig, update, frames=len(sched), interval=1000.0 / fps, blit=False)
-    anim.save(str(out_path), writer=animation.FFMpegWriter(fps=fps, bitrate=3600), dpi=100)
-    plt.close(fig)
-    return out_path
+    return _save_anim(fig, update, len(sched), out_path, fps)
 
 
 # --------------------------------------------------------------------------------------

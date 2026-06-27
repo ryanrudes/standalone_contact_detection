@@ -100,6 +100,7 @@ the bounce measurable at all.
 from __future__ import annotations
 
 import numpy as np
+from scipy.signal import find_peaks
 
 from .config import ImpactParams
 from .signals import gaussian_smooth
@@ -234,46 +235,6 @@ def _refine_center_subframe(s: np.ndarray, peak: int) -> float:
     return peak + offset
 
 
-def _significant_peaks(
-    response: np.ndarray, threshold: float, min_separation: int
-) -> list[int]:
-    """Indices of strong, well-separated positive maxima of the matched-filter response.
-
-    A single velocity step produces *one* arrest, but its matched-filter response is a
-    triangular bump several samples wide (the kernel slides on and off the edge), so a
-    naive "any local maximum" rule would emit many duplicate detections along the bump
-    and -- worse -- spawn ghosts from floating-point ``+0.0``/``-0.0`` wobble in the
-    flat zero regions away from any step. We avoid both with two guards:
-
-      1. **Significance**: only response values ``>= threshold`` are eligible. The
-         threshold is a fraction of the *largest* response in the record (peak-relative),
-         so flat/zero stretches and sensor jitter never clear the bar, and the absolute
-         scale of the record drops out.
-      2. **Non-maximum suppression**: scan eligible samples in descending response order
-         and greedily keep a peak only if no already-kept peak lies within
-         ``min_separation`` samples (the template half-width). This collapses each
-         triangular bump to its single dominant sample -- one atom per arrest (s.6).
-
-    Returns the kept peak indices (unsorted; the caller sorts the final impulses by time).
-    """
-    n = response.shape[0]
-    eligible = [
-        i
-        for i in range(1, n - 1)
-        if np.isfinite(response[i])
-        and response[i] >= threshold
-        and response[i] >= response[i - 1]
-        and response[i] >= response[i + 1]
-    ]
-    # Greedy non-maximum suppression: strongest peaks claim their neighbourhood first.
-    eligible.sort(key=lambda i: response[i], reverse=True)
-    kept: list[int] = []
-    for i in eligible:
-        if all(abs(i - j) > min_separation for j in kept):
-            kept.append(i)
-    return kept
-
-
 def _interp_time(t: np.ndarray, frac_index: float) -> float:
     """Time at a (possibly fractional) frame index by linear interpolation of ``t``.
 
@@ -398,7 +359,11 @@ def detect_impacts(
     # in step 4.
     min_step_response = params.min_closing_speed * np.sqrt(half / 2.0)
     threshold = max(0.5 * min_step_response, 1e-9)
-    candidates = _significant_peaks(response, threshold, min_separation=half)
+    # Strong, well-separated positive maxima. find_peaks applies the significance floor
+    # (height) and the greedy descending non-maximum suppression (distance) in one call;
+    # distance=half+1 reproduces the old strict ``|i - j| > half`` separation bit-for-bit
+    # (one atom per arrest, s.6). The caller sorts the final impulses by time.
+    candidates, _ = find_peaks(response, height=threshold, distance=half + 1)
 
     # --- step 4: gate by closing speed, then characterize each accepted impact ---
     impulses: list[ContactImpulse] = []

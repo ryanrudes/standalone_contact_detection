@@ -1,10 +1,13 @@
 [project]
 name = "standalone-contact-detection"
 version = "0.1.0"
-description = "A self-contained, from-scratch reimplementation of contact detection from a motion-capture trajectory (numpy + scipy only)."
+description = "A probabilistic, support-relative contact-state estimator for motion-capture trajectories, validated against MuJoCo physics."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "clarabel>=0.11.1",
+    "coal>=3.0.3",
+    "cvxpy>=1.9.2",
     "matplotlib>=3.11.0",
     "mujoco>=3.2.0",
     "numpy>=2.5.0",

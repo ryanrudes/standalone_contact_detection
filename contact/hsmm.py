@@ -83,11 +83,11 @@ Public API
 from __future__ import annotations
 
 import numpy as np
-from scipy.special import gammaln
+from scipy.stats import nbinom
 
 from .hmm import logsumexp
 
-__all__ = ["duration_logpmf", "hsmm_viterbi", "hsmm_posteriors"]
+__all__ = ["duration_logpmf", "hsmm_viterbi", "hsmm_posteriors", "SemiMarkovHMM"]
 
 # Finite stand-in for log(0); same sentinel convention as contact.hmm so the two
 # modules compose without -inf/nan surprises.
@@ -97,6 +97,19 @@ _LOG_ZERO = -1e30
 # ======================================================================================
 # Duration distribution
 # ======================================================================================
+
+def _nb_params(mean_dwell_frames: float, concentration: float) -> tuple[float, float]:
+    """Negative-binomial ``(r, p)`` for a target mean dwell (shifted by the 1-frame floor).
+
+    ``k = d - 1 ~ NB(r, p)`` with ``r = concentration`` and ``p`` set so ``E[d] =
+    mean_dwell_frames`` (NB mean ``r(1-p)/p`` => ``p = r/(r + (mean-1))``); this is
+    exactly ``scipy.stats.nbinom(n=r, p=p)``.
+    """
+    r = float(max(concentration, 1e-6))
+    mean_k = float(max(mean_dwell_frames, 1.0)) - 1.0
+    p = r / (r + mean_k) if mean_k > 0.0 else 1.0
+    return r, min(max(p, 1e-12), 1.0 - 1e-15)  # keep both logs finite
+
 
 def duration_logpmf(
     d: int | np.ndarray,
@@ -136,37 +149,14 @@ def duration_logpmf(
     """
     d_arr = np.asarray(d, dtype=float)
     scalar_in = d_arr.ndim == 0
+    r, p = _nb_params(mean_dwell_frames, concentration)
 
-    r = float(max(concentration, 1e-6))
-    mean = float(max(mean_dwell_frames, 1.0))
-
-    # k = d - 1 is the number of extra frames beyond the mandatory single frame.
-    # E[k] = mean - 1; NB mean is r(1-p)/p, so p = r / (r + E[k]).
-    mean_k = mean - 1.0
-    # When mean_k -> 0 the dwell collapses to a deterministic single frame; guard p->1.
-    p = r / (r + mean_k) if mean_k > 0.0 else 1.0
-    p = min(max(p, 1e-12), 1.0 - 1e-15)  # keep both logs finite
-    log_p = np.log(p)
-    log_1mp = np.log1p(-p)
-
+    # k = d - 1 extra frames beyond the mandatory first; a shifted NB(r, p), which is
+    # exactly scipy's nbinom(n=r, p=p). Non-integer or d < 1 score log 0 (= _LOG_ZERO).
     k = d_arr - 1.0
     valid = (d_arr >= 1.0) & (np.abs(d_arr - np.round(d_arr)) < 1e-9)
-
-    # NB log-pmf: lgamma(k+r) - lgamma(r) - lgamma(k+1) + r*log p + k*log(1-p).
-    with np.errstate(invalid="ignore"):
-        k_safe = np.where(valid, k, 0.0)  # avoid lgamma of negatives for invalid entries
-        logpmf = (
-            gammaln(k_safe + r)
-            - gammaln(r)
-            - gammaln(k_safe + 1.0)
-            + r * log_p
-            + k_safe * log_1mp
-        )
-    logpmf = np.where(valid, logpmf, _LOG_ZERO)
-
-    if scalar_in:
-        return float(logpmf)
-    return logpmf
+    logpmf = np.where(valid, nbinom.logpmf(np.where(valid, k, 0.0), r, p), _LOG_ZERO)
+    return float(logpmf) if scalar_in else logpmf
 
 
 def _duration_logsf(
@@ -176,25 +166,14 @@ def _duration_logsf(
 ) -> float:
     """Log survival function ``log P(duration >= d)`` for one state.
 
-    This is the right-censored ("the bout has lasted at least ``d`` frames and has
-    not yet ended") duration mass, the complement of the CDF:
-    ``log(1 - CDF(d - 1)) = log sum_{j >= d} pmf(j)``. It is what a segment that
-    hits the ``max_dur`` cap must score instead of the point pmf, so a genuine bout
-    longer than the cap is represented as a *censored* segment (which may continue)
-    rather than being forced to end exactly at the cap (see :func:`_duration_table`
-    and the censoring discussion in :func:`hsmm_viterbi`).
-
-    Computed as ``log P(>= d) = log(pmf(d)) + log(1 + sum_{j>d} pmf(j)/pmf(d))`` via
-    a stable ``logsumexp`` over a tail long enough to capture essentially all the
-    remaining mass (the negative-binomial tail decays geometrically).
+    The right-censored mass a segment scores when it hits the ``max_dur`` cap instead of
+    the point pmf, so a bout longer than the cap is a *censored* segment that may continue
+    (see :func:`_duration_table` and :func:`hsmm_viterbi`). With ``k = d - 1`` and the same
+    ``NB(r, p)`` as :func:`duration_logpmf`, ``P(d >= D) = P(k >= D-1) = P(k > D-2)`` =
+    ``nbinom.logsf(D - 2)`` -- exact, replacing the old finite-tail ``logsumexp`` sum.
     """
-    mean = float(max(mean_dwell_frames, 1.0))
-    # Tail length: a few multiples of the mean beyond d comfortably covers the NB
-    # mass (the survival is dominated by the first ~ a few means of the tail).
-    tail = int(max(1, np.ceil(40.0 * mean)))
-    js = np.arange(d, d + tail, dtype=float)
-    logpmf = np.asarray(duration_logpmf(js, mean, concentration))  # array in -> array out
-    return float(logsumexp(logpmf))
+    r, p = _nb_params(mean_dwell_frames, concentration)
+    return float(nbinom.logsf(d - 2, r, p))
 
 
 def _duration_table(
@@ -723,6 +702,51 @@ def hsmm_posteriors(
     row = np.where(row > 0.0, row, 1.0)
     gamma /= row
     return gamma, loglik
+
+
+# ======================================================================================
+# Object interface (mirrors contact.hmm.HMM so the two are interchangeable)
+# ======================================================================================
+
+
+class SemiMarkovHMM:
+    """Explicit-duration (semi-Markov) HMM (THEORY.md s.5).
+
+    An HMM whose dwell time carries an explicit duration prior instead of a memoryless
+    geometric self-loop, so short spurious segments are intrinsically improbable -- the
+    principled, model-based replacement for the toy script's ``drop_short_runs``. Same
+    interface as :class:`contact.hmm.HMM` (a :class:`~contact.hmm.TemporalSmoother`):
+    :meth:`posterior` is the segmental forward-backward, :meth:`map_path` the segmental
+    Viterbi, both with duration censoring so a bout longer than ``max_dur`` is represented
+    exactly rather than truncated. Persistence lives in the duration model, so the
+    transition matrix here is the *base* (homogeneous) one -- its diagonal is ignored.
+    """
+
+    def __init__(
+        self,
+        log_trans: np.ndarray,
+        log_init: np.ndarray,
+        mean_dwell_frames: np.ndarray,
+        concentration: float,
+        max_dur: int | None = None,
+    ) -> None:
+        self.log_trans = log_trans
+        self.log_init = log_init
+        self.mean_dwell_frames = mean_dwell_frames
+        self.concentration = concentration
+        self.max_dur = max_dur
+
+    def posterior(self, log_emission: np.ndarray) -> tuple[np.ndarray, float]:
+        return hsmm_posteriors(
+            log_emission, self.log_trans, self.log_init,
+            self.mean_dwell_frames, self.concentration, self.max_dur,
+        )
+
+    def map_path(self, log_emission: np.ndarray) -> np.ndarray:
+        return hsmm_viterbi(
+            log_emission, self.log_trans, self.log_init,
+            self.mean_dwell_frames, self.concentration, self.max_dur,
+        )
 
 
 # ======================================================================================

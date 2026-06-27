@@ -63,7 +63,7 @@ import numpy as np
 
 from .hmm import forward_backward, logsumexp, viterbi
 
-__all__ = ["exact_active_sets", "particle_filter_active_sets"]
+__all__ = ["exact_active_sets", "particle_filter_active_sets", "StructurePosterior"]
 
 # Clip the dwell self-stay probability strictly inside (0, 1). A p_stay of exactly 1 makes
 # the chain reducible (it can never switch sets) and exactly 0 forbids persistence; both
@@ -467,3 +467,40 @@ def particle_filter_active_sets(
         frozenset(np.flatnonzero(active_posterior[t] > 0.5).tolist()) for t in range(T)
     ]
     return active_posterior, map_sets
+
+
+# ======================================================================================
+# Object interface: the multi-body engine, mirroring contact.hmm.HMM for one pair.
+# ======================================================================================
+
+
+class StructurePosterior:
+    """The active-contact-STRUCTURE posterior over a graph's ``E`` candidate edges (s.8).
+
+    The multi-body analog of :class:`contact.hmm.HMM`. Where the HMM infers the latent MODE
+    per frame for ONE body pair, this infers which SET of edges is simultaneously active over
+    time -- a posterior over the ``2**E`` structures. It bundles the structure-level temporal
+    prior (the self-stay log-probability ``log_dwell_stay``, THEORY.md s.5 lifted to the
+    structure level), so the per-edge log-evidence ``(T, E, 2)`` is the only per-call input.
+    Two estimators of the SAME posterior, each returning ``(per-edge active posterior (T, E),
+    MAP active-set sequence)``:
+
+      * :meth:`exact`  -- enumerate the ``2**E`` subset alphabet and run the HMM
+        forward-backward / Viterbi over it (the reference; preferred for small ``E``, s.10).
+      * :meth:`filter` -- a Rao-Blackwellized particle smoother that scales to large ``E``
+        without ever materializing the ``2**E`` alphabet.
+    """
+
+    def __init__(self, log_dwell_stay: float, seed: int = 0) -> None:
+        self.log_dwell_stay = float(log_dwell_stay)
+        self.seed = int(seed)
+
+    def exact(self, log_evidence: np.ndarray) -> tuple[np.ndarray, list[frozenset[int]]]:
+        return exact_active_sets(log_evidence, self.log_dwell_stay, seed=self.seed)
+
+    def filter(
+        self, log_evidence: np.ndarray, n_particles: int = 256
+    ) -> tuple[np.ndarray, list[frozenset[int]]]:
+        return particle_filter_active_sets(
+            log_evidence, self.log_dwell_stay, n_particles=n_particles, seed=self.seed
+        )

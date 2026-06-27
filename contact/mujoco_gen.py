@@ -45,6 +45,7 @@ import numpy as np
 
 import mujoco
 
+from contact._mjcf import obj_id as _id, options as _common_options
 from contact.geometry import plane_gap, quat_to_matrix
 from contact.types import (
     FREE,
@@ -81,14 +82,6 @@ _ROLL_VTAN = 0.05       # m/s : a sphere's COM tangential speed above this (with
 # --------------------------------------------------------------------------------------
 # Small helpers
 # --------------------------------------------------------------------------------------
-
-def _id(model: mujoco.MjModel, objtype: int, name: str) -> int:
-    """Resolve a named MuJoCo object to its integer id (raises if absent)."""
-    i = mujoco.mj_name2id(model, objtype, name)
-    if i < 0:
-        raise KeyError(f"no {objtype!r} named {name!r} in model")
-    return i
-
 
 def _object_twist_world(model: mujoco.MjModel, data: mujoco.MjData, body_id: int) -> tuple[np.ndarray, np.ndarray]:
     """World-frame spatial velocity of a body: (omega (3,), v_com (3,)).
@@ -206,14 +199,6 @@ _BOX_BOTTOM_CORNERS_LOCAL = np.array(
 # the realized k_eff = f/penetration from the settled sim and report THAT as the truth.
 _RIG_SOLREF = "-2000 -120"          # direct (stiffness, damping); negative => bypass time-const form
 _RIG_SOLIMP = "0.2 0.2 0.001"       # constant impedance (dmin == dmax) => a clean linear spring
-
-
-def _common_options() -> str:
-    """MuJoCo <option> block shared by the scenarios (explicit Euler-ish defaults)."""
-    return (
-        '<option timestep="0.0005" gravity="0 0 -9.81" '
-        'integrator="implicitfast" cone="pyramidal"/>'
-    )
 
 
 def _build_drop_rest() -> tuple[mujoco.MjModel, dict]:

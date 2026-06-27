@@ -38,36 +38,10 @@ import numpy as np
 
 import mujoco
 
-# --------------------------------------------------------------------------------------
-# Tiny self-contained helpers (NO import of mujoco_gen or any submodule that imports it).
-# --------------------------------------------------------------------------------------
+from ._mjcf import body_dofadr as _dofadr, body_id as _bid, options as _options
 
-
-def _options() -> str:
-    """Shared MuJoCo <option> block: gravity -9.81, fine timestep, pyramidal cone.
-
-    A small timestep (0.0005 s) keeps the body-to-body impacts crisp -- an impact is a
-    near-discontinuous velocity reset (THEORY.md s.6), and too coarse a step smears it
-    into a soft ramp that the truth labeller would never flag as IMPACT.
-    """
-    return (
-        '<option timestep="0.0005" gravity="0 0 -9.81" '
-        'integrator="implicitfast" cone="pyramidal"/>'
-    )
-
-
-def _bid(model: mujoco.MjModel, name: str) -> int:
-    """Resolve a named body to its integer id (raises if absent)."""
-    i = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-    if i < 0:
-        raise KeyError(f"no body named {name!r} in model")
-    return i
-
-
-def _dofadr(model: mujoco.MjModel, body_name: str) -> int:
-    """First DOF address of a body's joint (for writing initial qvel)."""
-    bid = _bid(model, body_name)
-    return int(model.jnt_dofadr[model.body_jntadr[bid]])
+# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
+# (which imports this file at its end to register the builders) stays cycle-free.
 
 
 # Shared sizes (kept as named constants so surface points / tracked material points line up).

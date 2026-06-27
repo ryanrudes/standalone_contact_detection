@@ -240,6 +240,11 @@ class ContactDetector:
         init[free_idx] = 0.5
         log_init = np.log(init)
 
+        # The per-frame smoother: an HMM over the modes whose prior is the gap-gated guard.
+        # Built once and reused for the EM responsibilities and the final posterior (s.5) --
+        # the emissions are the only thing that changes between calls.
+        smoother = hmm.HMM(log_trans_gated, log_init)
+
         # --- (b') Per-frame measurement-uncertainty tempering (THEORY.md s.8). ----------
         # OFF by default and a strict no-op unless BOTH the flag is set AND the
         # observations carry a per-frame measurement covariance. When enabled we compute
@@ -262,29 +267,12 @@ class ContactDetector:
         if getattr(cfg.inference, "use_uncertainty", False) and obs.meas_cov is not None:
             temper_w = uncertainty.emission_tempering(obs, cfg.emission)
 
-        # --- (c) EM self-calibration of the resting-gap bias (THEORY.md s.7 & s.8).
-        # The resting bias is the contact-state mean gap. Each EM step: (E) compute the
-        # smoothed posterior with the current bias (using the GATED transition tensor so
-        # the guard informs the responsibilities); (M) re-estimate the bias as the
-        # posterior-CONTACT-weighted mean of the observed gap, clipped to the physically
-        # plausible band. This is the principled replacement for the toy script's
-        # circular quiet-frame median: the responsibilities come from the model itself.
-        max_bias = abs(float(cfg.calibration.max_resting_bias))
-        gap_bias = 0.0
-        for _ in range(max(0, int(cfg.calibration.em_iters))):
-            log_em = emissions.log_emissions(
-                obs, cfg.emission, gap_bias, states, cfg.material, force=cfg.force
-            )
-            if temper_w is not None:
-                log_em = uncertainty.apply_tempering(log_em, temper_w)
-            gamma, _loglik = hmm.forward_backward(log_em, log_trans_gated, log_init)
-            # P(contact) per frame = sum of the contact-state posteriors (= 1 - P(free)).
-            w = gamma[:, contact_state_idx].sum(axis=1)  # (T,) responsibilities
-            wsum = float(w.sum())
-            if wsum > 1e-12:
-                new_bias = float(np.dot(w, gap) / wsum)
-                gap_bias = float(np.clip(new_bias, -max_bias, max_bias))
-            # If there is essentially no contact mass, leave the bias unchanged.
+        # --- (c) EM self-calibration of the resting-gap bias (THEORY.md s.7 & s.8). The
+        # principled replacement for the toy script's circular quiet-frame median -- the
+        # contact responsibilities that weight the bias come from the model itself.
+        gap_bias = self._calibrate_gap_bias(
+            obs, cfg, states, gap, smoother, temper_w, contact_state_idx
+        )
 
         # --- (d) Final smoothed inference with the calibrated bias.
         log_em = emissions.log_emissions(
@@ -295,7 +283,7 @@ class ContactDetector:
         # Per-frame posterior ALWAYS from forward-backward on the gated tensor, whether
         # or not we decode the MAP path with the semi-Markov model (the gated guard is
         # exactly the per-frame prior we want for the calibrated P(contact)).
-        gamma, _loglik = hmm.forward_backward(log_em, log_trans_gated, log_init)
+        gamma, _loglik = smoother.posterior(log_em)
         # Calibrated per-frame contact posterior = 1 - P(free) (THEORY.md s.4/s.5).
         contact_posterior = 1.0 - gamma[:, free_idx]
 
@@ -317,15 +305,15 @@ class ContactDetector:
             # (homogeneous) matrix -- a time-varying guard would change meaning under the
             # segmental factorization (see contact.hsmm). The gap gate still shapes
             # touchdown via the emissions (gap ~ 0) and the reported posterior above.
-            path = hsmm.hsmm_viterbi(
-                log_em,
+            decoder = hsmm.SemiMarkovHMM(
                 log_trans_base,
                 log_init,
                 mean_dwell_frames,
                 concentration=float(cfg.transition.dwell_concentration),
             )
+            path = decoder.map_path(log_em)
         else:
-            path = hmm.viterbi(log_em, log_trans_gated, log_init)
+            path = smoother.map_path(log_em)
         map_state = [states[int(s)] for s in path]
         in_contact = np.array([s != FREE for s in map_state], dtype=bool)
         intervals = _intervals_from_map(t, map_state)
@@ -383,6 +371,30 @@ class ContactDetector:
             impulses=impulses,
             slip_state=slip,
         )
+
+    @staticmethod
+    def _calibrate_gap_bias(obs, cfg, states, gap, smoother, temper_w, contact_state_idx):
+        """EM self-calibration of the resting-gap bias (THEORY.md s.7/s.8).
+
+        Each EM step: (E) the smoothed posterior under the current bias (the gated guard in
+        ``smoother`` informs the responsibilities); (M) re-estimate the bias as the
+        posterior-contact-weighted mean of the observed gap, clipped to the plausible band.
+        Returns the calibrated bias (0.0 if there is essentially no contact mass to weight).
+        """
+        max_bias = abs(float(cfg.calibration.max_resting_bias))
+        gap_bias = 0.0
+        for _ in range(max(0, int(cfg.calibration.em_iters))):
+            log_em = emissions.log_emissions(
+                obs, cfg.emission, gap_bias, states, cfg.material, force=cfg.force
+            )
+            if temper_w is not None:
+                log_em = uncertainty.apply_tempering(log_em, temper_w)
+            gamma, _ = smoother.posterior(log_em)
+            w = gamma[:, contact_state_idx].sum(axis=1)  # contact responsibilities
+            wsum = float(w.sum())
+            if wsum > 1e-12:  # else: no contact mass -> leave the bias unchanged
+                gap_bias = float(np.clip(np.dot(w, gap) / wsum, -max_bias, max_bias))
+        return gap_bias
 
     def discover_modes(
         self, obs: ContactObservations, seed: int = 0
