@@ -82,6 +82,7 @@ Public API
 
 from __future__ import annotations
 
+import markovlib as _markovlib
 import numpy as np
 from scipy.stats import nbinom
 
@@ -394,133 +395,17 @@ def hsmm_viterbi(
         log_emission, log_trans, log_init, mean_dwell_frames
     )
     D = _default_max_dur(mean, max_dur)
-    log_dur = _duration_table(mean, concentration, D)            # (S, D); last col = survival
-    A = _interseg_logtrans(log_trans)                            # (S', S), off-diagonal switch
 
-    # Prefix sums of emissions: E[t, s] = sum_{u=0..t-1} emit[u, s], so the
-    # emission mass of frames [t-d .. t-1] is E[t] - E[t-d]. Shape (T+1, S).
-    E = np.zeros((T + 1, S), dtype=float)
-    np.cumsum(emit, axis=0, out=E[1:])
-
-    NEG = _LOG_ZERO
-    # Two flavours of "a segment of state s ends at frame t-1": natural (d<D) and
-    # censored (d==D). Defined for t = 1..T; t=0 is the empty prefix.
-    V_end = np.full((T + 1, S), NEG, dtype=float)
-    V_cens = np.full((T + 1, S), NEG, dtype=float)
-    # Backtrace per flavour: chosen duration d, predecessor state (-1 = "start"),
-    # and predecessor flavour (0 = natural-end, 1 = censored).
-    bd_end = np.zeros((T + 1, S), dtype=np.intp)
-    bp_end = np.full((T + 1, S), -1, dtype=np.intp)
-    bf_end = np.zeros((T + 1, S), dtype=np.intp)
-    bd_cens = np.zeros((T + 1, S), dtype=np.intp)
-    bp_cens = np.full((T + 1, S), -1, dtype=np.intp)
-    bf_cens = np.zeros((T + 1, S), dtype=np.intp)
-
-    s_range = np.arange(S)
-    for t in range(1, T + 1):
-        d_max = min(t, D)
-        # seg_emit[d-1, s] = E[t, s] - E[t-d, s]  for d = 1..d_max  -> (d_max, S).
-        seg_emit = E[t][None, :] - E[t - d_max : t][::-1, :]
-        dur_term = log_dur[:, :d_max].T                          # (d_max, S)
-
-        # best path ending at frame (t-d)-1 in any flavour:
-        # tot_prev[d-1, s'] = max(V_end, V_cens)[t-d, s'].
-        tot = np.maximum(V_end, V_cens)                          # (T+1, S)
-        tot_prev = tot[t - d_max : t][::-1, :]                   # (d_max, S')
-        cens_prev = V_cens[t - d_max : t][::-1, :]               # (d_max, S) same-state cont.
-
-        # --- entry value into state s for each duration d ------------------------
-        # switch_in[d-1, s] = max_{s'} ( tot_prev[d-1, s'] + A[s', s] ). A has -inf on
-        # its diagonal, so s' == s is automatically excluded (a switch must change state).
-        trans_score = tot_prev[:, :, None] + A[None, :, :]       # (d_max, S', S)
-        switch_in = np.max(trans_score, axis=1)                  # (d_max, S)
-        switch_idx = np.argmax(trans_score, axis=1)              # (d_max, S) -> s'
-
-        # cont_in[d-1, s] = V_cens[t-d, s]  (same-state continuation, zero cost).
-        cont_in = cens_prev                                      # (d_max, S)
-
-        # The best predecessor for entering (d, s): a switch (flavour irrelevant for
-        # the *successor*; we record the source state) or a censored continuation.
-        entry = np.maximum(switch_in, cont_in)                   # (d_max, S)
-
-        # --- first-segment (start) candidate: only when t - d == 0, i.e. d == t ---
-        if d_max == t:
-            entry = entry.copy()
-            start_vals = np.maximum(log_init, entry[t - 1])
-            entry[t - 1] = start_vals
-
-        cand = entry + seg_emit + dur_term                       # (d_max, S)
-
-        # Resolve, per duration and state, which predecessor won (for the backtrace):
-        # prev_state, prev_flavour. Default: a switch -> source state, prev flavour is
-        # whichever flavour was larger at that source; same-state continuation -> s, cens.
-        use_cont = cont_in >= switch_in                          # (d_max, S)
-        # for the switch winner, prev flavour = argmax of (V_end, V_cens) at source.
-        src = switch_idx                                         # (d_max, S)
-        # gather V_end/V_cens at (t-d, src) to decide the source flavour
-        idx_d = np.arange(d_max)[:, None]
-        # absolute time index of predecessor end = t - (d) = t - (idx_d+1)
-        t_pred = (t - (idx_d + 1))                               # (d_max, 1)
-        ve_src = V_end[t_pred, src]                              # (d_max, S)
-        vc_src = V_cens[t_pred, src]                             # (d_max, S)
-        switch_pflav = (vc_src > ve_src).astype(np.intp)         # (d_max, S)
-
-        pstate = np.where(use_cont, s_range[None, :], src)       # (d_max, S)
-        pflav = np.where(use_cont, 1, switch_pflav)              # (d_max, S)
-
-        if d_max == t:
-            # at d == t the start candidate may beat both; mark predecessor = -1.
-            is_start = start_vals >= np.maximum(switch_in[t - 1], cont_in[t - 1])
-            pstate[t - 1] = np.where(is_start, -1, pstate[t - 1])
-            pflav[t - 1] = np.where(is_start, 0, pflav[t - 1])
-
-        # --- split candidate scores into the two successor flavours --------------
-        # d == D (index D-1, present only when d_max == D) is the censored flavour;
-        # all shorter d are natural-end. Maximise within each flavour over duration.
-        is_cap = d_max == D
-        if is_cap:
-            # natural-end candidates: durations 1..D-1 (indices 0..D-2).
-            nat = cand[: D - 1] if D >= 2 else np.full((0, S), NEG)
-            cens = cand[D - 1]                                   # (S,) the single cap duration
-        else:
-            nat = cand                                           # all durations are natural
-            cens = None
-
-        # natural-end winner
-        if nat.shape[0] > 0:
-            best_nat = np.argmax(nat, axis=0)                    # (S,)
-            V_end[t] = nat[best_nat, s_range]
-            bd_end[t] = best_nat + 1
-            bp_end[t] = pstate[best_nat, s_range]
-            bf_end[t] = pflav[best_nat, s_range]
-        # censored winner (single duration d == D)
-        if is_cap and cens is not None:
-            V_cens[t] = cens
-            bd_cens[t] = D
-            bp_cens[t] = pstate[D - 1]
-            bf_cens[t] = pflav[D - 1]
-
-    # --- Backtrace whole segments from the best terminal (state, flavour) at T -----
-    term_end = V_end[T]
-    term_cens = V_cens[T]
-    s = int(np.argmax(np.maximum(term_end, term_cens)))
-    flav = 1 if term_cens[s] > term_end[s] else 0
-
-    path = np.empty(T, dtype=np.intp)
-    t = T
-    while t > 0:
-        # Pick the backtrace tables for the flavour of the segment ending at frame t-1.
-        bd, bp, bf = (bd_cens, bp_cens, bf_cens) if flav == 1 else (bd_end, bp_end, bf_end)
-        d = int(bd[t, s])
-        prev_s = int(bp[t, s])
-        prev_f = int(bf[t, s])
-        path[t - d : t] = s
-        t -= d
-        if prev_s < 0:
-            break  # reached the start segment
-        s = prev_s
-        flav = prev_f
-    return path.astype(int)
+    # Delegate the explicit-duration DP to markovlib's SegmentalChain -- the identical
+    # right-censored EDHMM (off-diagonal renormalized inter-segment switch, survival mass at the
+    # d == D cap, and same-state continuation across a censored boundary), verified bit-for-bit in
+    # ``verify_markovlib.py``. markovlib builds the inter-segment switch and the censored duration
+    # table internally from the base ``(S, S)`` transition and the per-state negative-binomial dwells.
+    durations = tuple(
+        _markovlib.NegBinomDuration(float(mean[s]), float(concentration)) for s in range(S)
+    )
+    model = _markovlib.SemiMarkovChain(log_init, log_trans, durations, D)
+    return np.asarray(_markovlib.decode(model, emit), dtype=int)
 
 
 # ======================================================================================
