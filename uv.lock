@@ -647,6 +647,26 @@ wheels = [
 ]
 
 [[package]]
+name = "markovlib"
+version = "0.0.1"
+source = { editable = "markovlib" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "scipy", specifier = ">=1.11" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1207,6 +1227,7 @@ dependencies = [
     { name = "clarabel" },
     { name = "coal" },
     { name = "cvxpy" },
+    { name = "markovlib" },
     { name = "matplotlib" },
     { name = "mujoco" },
     { name = "numpy" },
@@ -1223,6 +1244,7 @@ requires-dist = [
     { name = "clarabel", specifier = ">=0.11.1" },
     { name = "coal", specifier = ">=3.0.3" },
     { name = "cvxpy", specifier = ">=1.9.2" },
+    { name = "markovlib", editable = "markovlib" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "mujoco", specifier = ">=3.2.0" },
     { name = "numpy", specifier = ">=2.5.0" },

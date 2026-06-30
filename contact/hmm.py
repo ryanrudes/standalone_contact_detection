@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import markovlib as _markovlib
 import numpy as np
 from scipy.special import logsumexp
 
@@ -135,33 +136,14 @@ def forward_backward(
     log_emission, log_init, T, S = _validate(log_emission, log_init)
     log_A = _broadcast_trans(log_trans, T, S)  # (T-1, S, S)
 
-    # --- Forward pass -----------------------------------------------------------
-    log_alpha = np.empty((T, S), dtype=float)
-    log_alpha[0] = log_init + log_emission[0]
-    for t in range(1, T):
-        # alpha[t, s] = emit + logsumexp_j(alpha[t-1, j] + A[t-1, j, s]).
-        # log_alpha[t-1] is indexed by j (rows); broadcast against A[t-1]'s rows.
-        prev = log_alpha[t - 1][:, None] + log_A[t - 1]  # (S_j, S_s)
-        log_alpha[t] = log_emission[t] + logsumexp(prev, axis=0)
-
-    total_loglik = float(logsumexp(log_alpha[T - 1]))
-
-    # --- Backward pass ----------------------------------------------------------
-    log_beta = np.empty((T, S), dtype=float)
-    log_beta[T - 1] = 0.0  # log 1
-    for t in range(T - 2, -1, -1):
-        # beta[t, s] = logsumexp_j(A[t, s, j] + emit[t+1, j] + beta[t+1, j]).
-        nxt = log_A[t] + (log_emission[t + 1] + log_beta[t + 1])[None, :]  # (S_s, S_j)
-        log_beta[t] = logsumexp(nxt, axis=1)
-
-    # --- Combine into the smoothed posterior -----------------------------------
-    log_gamma = log_alpha + log_beta
-    # Row-normalize in log-space (logsumexp returns shape (T,); add a trailing axis).
-    log_gamma -= logsumexp(log_gamma, axis=1)[:, None]
-    gamma = np.exp(log_gamma)
-    # Guard against tiny numerical drift so rows sum to exactly 1.
+    # Delegate the recursion to markovlib (the vendored general engine), whose categorical
+    # forward-backward is this exact log-space recursion (verified bit-for-bit in
+    # ``verify_markovlib.py``). markovlib uses the same ``(T-1, S, S)`` transition layout.
+    result = _markovlib.smooth(_markovlib.DiscreteChain(log_init=log_init, log_trans=log_A), log_emission)
+    gamma = np.asarray(result.gamma, dtype=float)
+    # The same final guard as before: renormalize so rows sum to exactly 1 (a ~1e-15 effect).
     gamma /= gamma.sum(axis=1, keepdims=True)
-    return gamma, total_loglik
+    return gamma, result.loglik
 
 
 def viterbi(
@@ -203,21 +185,9 @@ def viterbi(
     log_emission, log_init, T, S = _validate(log_emission, log_init)
     log_A = _broadcast_trans(log_trans, T, S)  # (T-1, S, S)
 
-    log_delta = np.empty((T, S), dtype=float)
-    psi = np.zeros((T, S), dtype=np.intp)  # backpointers; psi[0] unused
-    log_delta[0] = log_init + log_emission[0]
-
-    for t in range(1, T):
-        # scores[j, s] = delta[t-1, j] + A[t-1, j, s]; maximize over j (rows).
-        scores = log_delta[t - 1][:, None] + log_A[t - 1]  # (S_j, S_s)
-        psi[t] = np.argmax(scores, axis=0)
-        log_delta[t] = log_emission[t] + np.max(scores, axis=0)
-
-    # Backtrace from the best terminal state.
-    path = np.empty(T, dtype=np.intp)
-    path[T - 1] = int(np.argmax(log_delta[T - 1]))
-    for t in range(T - 2, -1, -1):
-        path[t] = psi[t + 1, path[t + 1]]
+    # Delegate to markovlib's Viterbi (the identical max-plus recursion + backtrace; verified
+    # bit-for-bit in ``verify_markovlib.py``).
+    path = _markovlib.decode(_markovlib.DiscreteChain(log_init=log_init, log_trans=log_A), log_emission)
     return path.astype(int)
 
 
