@@ -648,7 +648,6 @@ wheels = [
 
 [[package]]
 name = "markovlib"
-version = "0.0.1"
 source = { editable = "markovlib" }
 dependencies = [
     { name = "numpy" },
