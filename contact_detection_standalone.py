@@ -1009,6 +1009,16 @@ class MixZero2D:
         return _log_mix_zero_2d(x, self.sigma_tight, self.sigma_broad, self.w_broad)
 
 
+@dataclass(frozen=True)
+class UniformClearance:
+    """Diffuse uniform gap prior of width ``width`` — the FREE clearance (no surface pins the gap)."""
+
+    width: float
+
+    def logpdf(self, gap: np.ndarray) -> np.ndarray:
+        return _log_uniform(self.width) * np.ones_like(np.asarray(gap, dtype=float))
+
+
 def _compose(terms: tuple) -> np.ndarray:
     """Sum a sequence of ``(channel_value, Density)`` into one per-frame log-density.
 
@@ -1044,17 +1054,13 @@ class Free(ContactMode):
     name = FREE
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _log_uniform(params.gap_free_range) * np.ones_like(np.asarray(obs.gap, dtype=float))
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.free_vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
-        return lp
-
-
-def _contact_gap_logpdf(obs, params, gap_bias):
-    """Shared gap term for every contact mode: split-normal about the resting bias."""
-    return _log_split_normal_gap(obs.gap, gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)
+        return _compose((
+            (obs.gap,           UniformClearance(params.gap_free_range)),
+            (obs.v_normal,      Normal1D(0.0, params.free_vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.free_vel_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.free_omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.free_omega_sigma)),
+        ))
 
 
 class Static(ContactMode):
@@ -1095,19 +1101,22 @@ class Pivoting(ContactMode):
     name = PIVOTING
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _contact_gap_logpdf(obs, params, gap_bias)
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
-        lp = lp + _log_offset_magnitude_1d(obs.omega_normal, params.pivot_speed, params.omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
-        return lp
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)),
+            (obs.v_normal,      Normal1D(0.0, params.vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.vel_sigma)),
+            (obs.omega_normal,  OffsetMagnitude1D(params.pivot_speed, params.omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.omega_sigma)),
+        ))
 
 
 class Rolling(ContactMode):
     """ROLLING: tangential-linear COUPLED to tangential-angular by the residual |v_t|−r|ω_t| ≈ 0.
 
-    Rolling is *defined* by that cross-channel correlation, so we encode it as a Gaussian on the
-    residual while leaving each tangential magnitude broad, and renormalize by Z_res (above).
+    The ONE non-product mode: v_tangent and ω_tangent are not independent, so the tangential block is
+    a Gaussian on the coupling residual (each magnitude left broad) renormalized by Z_res. In the
+    composition this is just a *derived channel* (the residual) plus a trailing block normalizer —
+    the _compose interface needs no special case; the coupling is a value, not new machinery.
     """
 
     name = ROLLING
@@ -1117,16 +1126,17 @@ class Rolling(ContactMode):
         w_t = np.asarray(obs.omega_tangent, dtype=float)
         speed_t = np.sqrt(np.sum(v_t * v_t, axis=-1))
         omega_t = np.sqrt(np.sum(w_t * w_t, axis=-1))
-        residual = speed_t - params.roll_radius * omega_t
-        log_z_res = _log_rolling_residual_normalizer(params.free_vel_sigma, params.free_omega_sigma, params.roll_radius, params.roll_sigma)
-        lp = _contact_gap_logpdf(obs, params, gap_bias)
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(v_t, params.free_vel_sigma)
-        lp = lp + _log_normal_2d_iso(w_t, params.free_omega_sigma)
-        lp = lp + _log_normal_1d(residual, 0.0, params.roll_sigma)
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
-        lp = lp - log_z_res
-        return lp
+        residual = speed_t - params.roll_radius * omega_t           # the rolling coupling |v_t|−r|ω_t|
+        log_z_res = _log_rolling_residual_normalizer(
+            params.free_vel_sigma, params.free_omega_sigma, params.roll_radius, params.roll_sigma)
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)),
+            (obs.v_normal,      Normal1D(0.0, params.vel_sigma)),
+            (v_t,               IsoNormal2D(params.free_vel_sigma)),
+            (w_t,               IsoNormal2D(params.free_omega_sigma)),
+            (residual,          Normal1D(0.0, params.roll_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.omega_sigma)),
+        )) - log_z_res
 
 
 class Impact(ContactMode):
@@ -1135,12 +1145,13 @@ class Impact(ContactMode):
     name = IMPACT
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _log_split_normal_gap(obs.gap, gap_bias, 2.0 * params.gap_sigma_gap, 2.0 * params.gap_sigma_pen)
-        lp = lp + _log_offset_magnitude_1d(obs.v_normal, params.impact_speed, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
-        return lp
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, 2.0 * params.gap_sigma_gap, 2.0 * params.gap_sigma_pen)),
+            (obs.v_normal,      OffsetMagnitude1D(params.impact_speed, params.vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.free_vel_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.free_omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.free_omega_sigma)),
+        ))
 
 
 MODES: dict[str, ContactMode] = {m.name: m for m in (Free(), Static(), Sliding(), Pivoting(), Rolling(), Impact())}
@@ -2287,6 +2298,7 @@ def _density_selftest(verbose: bool = True) -> None:
         ("IsoNormal2D mass", mass_2d(IsoNormal2D(0.5), 8.0)),
         ("OffsetMagnitude2D mass", mass_2d(OffsetMagnitude2D(0.15, 0.1), 3.0)),
         ("MixZero2D mass", mass_2d(MixZero2D(0.3, 3.0, 0.25), 40.0)),
+        ("UniformClearance mass", mass_1d(UniformClearance(2.0), 0.0, 2.0)),
     ]
 
     x1 = np.array([-0.3, 0.0, 0.4, 1.1])
