@@ -482,111 +482,14 @@ def hsmm_posteriors(
         log_emission, log_trans, log_init, mean_dwell_frames
     )
     D = _default_max_dur(mean, max_dur)
-    log_dur = _duration_table(mean, concentration, D)            # (S, D); col D-1 = survival
-    A = _interseg_logtrans(log_trans)                            # (S', S), off-diagonal switch
-
-    # Prefix sums: E[t, s] = sum_{u<t} emit[u, s]; seg(a,b,s) = E[b,s]-E[a,s].
-    E = np.zeros((T + 1, S), dtype=float)
-    np.cumsum(emit, axis=0, out=E[1:])
-
-    NEG = _LOG_ZERO
-
-    # --- Forward pass -----------------------------------------------------------
-    alpha_star = np.full((T + 1, S), NEG, dtype=float)  # segment of s begins at t
-    alpha_end = np.full((T + 1, S), NEG, dtype=float)   # natural (d<D) end at t-1
-    alpha_cens = np.full((T + 1, S), NEG, dtype=float)  # censored (d==D) end at t-1
-    alpha_star[0] = log_init
-
-    for t in range(1, T + 1):
-        # Natural-end durations d = 1 .. min(t, D-1) use the duration *pmf*.
-        dn = min(t, D - 1)
-        if dn >= 1:
-            seg_emit = E[t][None, :] - E[t - dn : t][::-1, :]    # (dn, S)
-            as_prev = alpha_star[t - dn : t][::-1, :]            # (dn, S)
-            dur_term = log_dur[:, :dn].T                         # (dn, S) pmf for d=1..dn
-            alpha_end[t] = logsumexp(as_prev + dur_term + seg_emit, axis=0)  # (S,)
-        # Censored duration d == D uses the survival mass (log_dur column D-1).
-        if t >= D:
-            seg_emit = E[t] - E[t - D]                           # (S,)
-            alpha_cens[t] = alpha_star[t - D] + log_dur[:, D - 1] + seg_emit
-
-        # A new segment can begin at t only if frames remain (t < T). A begin is either
-        # a switch from any other state's end (either flavour) or a same-state
-        # continuation across a censored boundary (zero transition cost).
-        if t < T:
-            tot_end = np.logaddexp(alpha_end[t], alpha_cens[t])  # (S,)
-            switch = logsumexp(tot_end[:, None] + A, axis=0)     # (S,) over s' (A excludes s'=s)
-            alpha_star[t] = np.logaddexp(switch, alpha_cens[t])  # switch (+) continuation
-
-    loglik = float(logsumexp(np.logaddexp(alpha_end[T], alpha_cens[T])))
-
-    # --- Backward pass ----------------------------------------------------------
-    # beta[t, s] = log p(o_t..o_{T-1} | a segment of state s begins at t). The post-end
-    # continuation values cont_nat / cont_cens are computed inline from beta[u].
-    beta = np.full((T + 1, S), NEG, dtype=float)
-
-    def _cont_nat(u: int) -> np.ndarray:
-        """Value following a *natural* end of each state at frame u (must switch)."""
-        if u == T:
-            return np.zeros(S, dtype=float)  # the record terminates here
-        return logsumexp(A + beta[u][None, :], axis=1)           # (S,) over s' (A excludes s'=s)
-
-    def _cont_cens(u: int) -> np.ndarray:
-        """Value following a *censored* end of each state at u (switch OR continue)."""
-        if u == T:
-            return np.zeros(S, dtype=float)
-        switch = logsumexp(A + beta[u][None, :], axis=1)         # (S,)
-        return np.logaddexp(switch, beta[u])                     # switch (+) same-state stay
-
-    for t in range(T - 1, -1, -1):
-        terms = []
-        dn = min(T - t, D - 1)
-        if dn >= 1:
-            seg_emit = E[t + 1 : t + dn + 1, :] - E[t][None, :]  # (dn, S)
-            dur_term = log_dur[:, :dn].T                         # (dn, S) pmf
-            # cont_nat at each natural-end frame t+1 .. t+dn.
-            cont = np.stack([_cont_nat(t + d) for d in range(1, dn + 1)], axis=0)  # (dn, S)
-            terms.append(logsumexp(dur_term + seg_emit + cont, axis=0))            # (S,)
-        if T - t >= D:
-            seg_emit = E[t + D, :] - E[t, :]                     # (S,)
-            terms.append(log_dur[:, D - 1] + seg_emit + _cont_cens(t + D))         # (S,)
-        if terms:
-            beta[t] = logsumexp(np.stack(terms, axis=0), axis=0)
-
-    # --- Per-frame occupancy posterior -----------------------------------------
-    # A segment of state s with start t' and duration d has normalised log-probability
-    #   alpha_star[t', s] + log_dur[s, d-1] + seg(t', t'+d, s) + cont[t'+d, s] - loglik,
-    # with cont = cont_cens for the censored d == D and cont_nat otherwise. It covers
-    # frames t' .. t'+d-1; we scatter its (<= 1) probability uniformly across them.
-    # Subtracting loglik makes the scores <= 0, so exponentiating is safe.
-    cont_nat_tab = np.stack([_cont_nat(u) for u in range(T + 1)], axis=0)   # (T+1, S)
-    cont_cens_tab = np.stack([_cont_cens(u) for u in range(T + 1)], axis=0)  # (T+1, S)
-
-    gamma = np.zeros((T, S), dtype=float)
-    for s in range(S):
-        for tp in range(T):
-            d_max = min(T - tp, D)
-            if d_max < 1:
-                continue
-            seg_emit = E[tp + 1 : tp + d_max + 1, s] - E[tp, s]  # (d_max,)
-            dur = log_dur[s, :d_max].copy()                      # (d_max,)
-            # cont per duration: cont_cens for d == D (index D-1), cont_nat otherwise.
-            cont = cont_nat_tab[tp + 1 : tp + d_max + 1, s].copy()  # (d_max,)
-            if d_max == D:
-                cont[D - 1] = cont_cens_tab[tp + D, s]
-            seg_logp = alpha_star[tp, s] + dur + seg_emit + cont - loglik  # (d_max,)
-            seg_p = np.exp(np.minimum(seg_logp, 0.0))            # (d_max,) probabilities
-            # Segment of duration d (index d-1) covers frames tp .. tp+d-1. Adding
-            # seg_p[d-1] to each of those frames is a suffix-cumulative scatter:
-            # frame tp+j receives the sum of seg_p over d-1 >= j, i.e. reverse-cumsum.
-            contrib = np.cumsum(seg_p[::-1])[::-1]               # (d_max,)
-            gamma[tp : tp + d_max, s] += contrib
-
-    # Normalise per frame (guard against tiny numerical drift / all-zero rows).
-    row = gamma.sum(axis=1, keepdims=True)
-    row = np.where(row > 0.0, row, 1.0)
-    gamma /= row
-    return gamma, loglik
+    # Delegate the explicit-duration forward-backward to markovlib's SegmentalChain.smooth -- the same
+    # two-flavour (natural / censored) EDHMM FB + occupancy scatter, verified bit-for-bit in
+    # ``verify_markovlib.py``. markovlib builds the inter-segment switch and censored duration table.
+    durations = tuple(
+        _markovlib.NegBinomDuration(float(mean[s]), float(concentration)) for s in range(S)
+    )
+    result = _markovlib.smooth(_markovlib.SemiMarkovChain(log_init, log_trans, durations, D), emit)
+    return result.gamma, result.loglik
 
 
 # ======================================================================================
