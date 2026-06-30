@@ -647,25 +647,6 @@ wheels = [
 ]
 
 [[package]]
-name = "markovlib"
-source = { editable = "markovlib" }
-dependencies = [
-    { name = "numpy" },
-    { name = "scipy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "scipy", specifier = ">=1.11" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -727,6 +708,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1a/8a/0402ba61a2f16038b48b39bccca271134be00c5c9f0f623208399333c448/markupsafe-3.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4faffd047e07c38848ce017e8725090413cd80cbc23d86e55c587bf979e579c9", size = 15426, upload-time = "2025-09-27T18:37:27.316Z" },
     { url = "https://files.pythonhosted.org/packages/70/bc/6f1c2f612465f5fa89b95bead1f44dcb607670fd42891d8fdcd5d039f4f4/markupsafe-3.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:32001d6a8fc98c8cb5c947787c5d08b0a50663d139f1305bac5885d98d9b40fa", size = 14146, upload-time = "2025-09-27T18:37:28.327Z" },
 ]
+
+[[package]]
+name = "marmo"
+source = { editable = "markovlib" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "scipy", specifier = ">=1.11" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "matplotlib"
@@ -1226,7 +1226,7 @@ dependencies = [
     { name = "clarabel" },
     { name = "coal" },
     { name = "cvxpy" },
-    { name = "markovlib" },
+    { name = "marmo" },
     { name = "matplotlib" },
     { name = "mujoco" },
     { name = "numpy" },
@@ -1243,7 +1243,7 @@ requires-dist = [
     { name = "clarabel", specifier = ">=0.11.1" },
     { name = "coal", specifier = ">=3.0.3" },
     { name = "cvxpy", specifier = ">=1.9.2" },
-    { name = "markovlib", editable = "markovlib" },
+    { name = "marmo", editable = "markovlib" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "mujoco", specifier = ">=3.2.0" },
     { name = "numpy", specifier = ">=2.5.0" },

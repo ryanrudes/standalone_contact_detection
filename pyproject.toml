@@ -8,7 +8,7 @@ dependencies = [
     "clarabel>=0.11.1",
     "coal>=3.0.3",
     "cvxpy>=1.9.2",
-    "markovlib",
+    "marmo",
     "matplotlib>=3.11.0",
     "mujoco>=3.2.0",
     "numpy>=2.5.0",
@@ -20,7 +20,7 @@ dev = [
     "pytest>=8.0.0",
 ]
 
-# markovlib is the vendored general Markov-process library (markovlib/); the contact engines
-# delegate to it. Consumed as an editable path dependency.
+# The vendored general Markov-process library (markovlib/) — published on PyPI as `marmo`, imported
+# as `markovlib`; the contact engines delegate to it. Consumed as an editable path dependency.
 [tool.uv.sources]
-markovlib = { path = "markovlib", editable = true }
+marmo = { path = "markovlib", editable = true }
