@@ -25,6 +25,3 @@ contact_timeline.png
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# Vendored sub-repo (own git history; formalize as a git submodule once it has a remote)
-/markovlib/

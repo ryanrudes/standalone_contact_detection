@@ -1,0 +1,3 @@
+[submodule "markovlib"]
+	path = markovlib
+	url = https://github.com/ryanrudes/markovlib.git
