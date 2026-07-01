@@ -2334,6 +2334,74 @@ def _density_selftest(verbose: bool = True) -> None:
         print("density self-test: all densities proper and all limit laws hold.")
 
 
+def _invariant_selftest(verbose: bool = True) -> None:
+    """Executable derivation of two structural invariants the whole method rests on.
+
+      (§1) SUPPORT-RELATIVITY. observe() measures motion in the *support's* frame, so a body
+           rigidly co-moving with a translating support reads STATIC (relative twist ≈ 0) even as
+           it sweeps metres through the world — THE foundational claim (a foot on a moving deck is
+           in solid contact). We assert the relative twist is ~0 while the world speed is O(1 m/s);
+           a non-support-relative observe() would report the world motion and fail by ~1e9×.
+
+      (§4) ROLLING PROPERNESS. Every mode column must be a proper density for the likelihood ratio
+           to stay calibrated. Rolling is the one non-product mode: its coupled (v_t, ω_t) block is
+           renormalized by Z_res. We recompute that normalizer by an INDEPENDENT 2-D quadrature (a
+           dense grid, vs. the code's nested adaptive quad) and assert they agree — i.e. the coupled
+           block integrates to 1.
+    """
+    bad: list[str] = []
+
+    # (§1) a body co-moving with a translating support reads static.
+    hz = 100.0
+    t = np.arange(0.0, 2.0, 1.0 / hz)
+    T = t.shape[0]
+    sup_pos = np.zeros((T, 3))
+    sup_pos[:, 0] = 1.0 * t                       # ~2 m of world travel along x
+    sup_pos[:, 1] = 0.3 * np.sin(2.0 * t)         # a bob, so the world velocity is non-trivial
+    sup_pos[:, 2] = 0.5
+    ident = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (T, 1))
+    support = PoseTrajectory(t=t, position=sup_pos, quat=ident)
+    body = PoseTrajectory(t=t, position=sup_pos + np.array([0.1, 0.0, 0.05]), quat=ident.copy())
+    surface = SupportSurface(point=np.zeros(3), normal=np.array([0.0, 0.0, 1.0]))
+    obs = observe(body, support, surface, np.array([0.0, 0.0, -0.05]))
+    world_speed = float(np.median(np.linalg.norm(np.diff(sup_pos, axis=0) * hz, axis=1)))
+    rel = max(
+        float(np.max(np.abs(obs.v_normal))),
+        float(np.max(np.linalg.norm(obs.v_tangent, axis=1))),
+        float(np.max(np.abs(obs.omega_normal))),
+        float(np.max(np.linalg.norm(obs.omega_tangent, axis=1))),
+    )
+    ok1 = (rel < 1e-9) and (world_speed > 0.9)
+    if verbose:
+        print(f"  [{'ok' if ok1 else 'FAIL'}] support-relativity: |relative twist| = {rel:.2e}"
+              f"   (world speed ≈ {world_speed:.2f} m/s)")
+    if not ok1:
+        bad.append("support-relativity")
+
+    # (§4) rolling's coupled block is proper: independent recompute of Z_res.
+    sv, sw, rr, rs = 0.50, 3.00, 0.05, 0.03       # EmissionParams defaults for the rolling block
+    code_z = float(np.exp(_log_rolling_residual_normalizer(sv, sw, rr, rs)))
+    n = 1200
+    a = np.linspace(0.0, 8.0 * sv, n)
+    b = np.linspace(0.0, 8.0 * sw, n)
+    ray_a = a / (sv * sv) * np.exp(-a * a / (2.0 * sv * sv))
+    ray_b = b / (sw * sw) * np.exp(-b * b / (2.0 * sw * sw))
+    resid = 1.0 / (rs * np.sqrt(2.0 * np.pi)) * np.exp(-0.5 * ((a[:, None] - rr * b[None, :]) / rs) ** 2)
+    grid_z = float(np.sum(ray_a[:, None] * ray_b[None, :] * resid) * (a[1] - a[0]) * (b[1] - b[0]))
+    err = abs(code_z - grid_z) / max(code_z, 1e-12)
+    ok2 = err < 5e-3
+    if verbose:
+        print(f"  [{'ok' if ok2 else 'FAIL'}] rolling Z_res proper: code={code_z:.6f} indep-grid={grid_z:.6f}"
+              f"   rel-err={err:.2e}")
+    if not ok2:
+        bad.append("rolling-properness")
+
+    if bad:
+        raise AssertionError("invariant self-test FAILED: " + ", ".join(bad))
+    if verbose:
+        print("invariant self-test: support-relativity holds and rolling Z_res is proper.")
+
+
 # ======================================================================================
 # What this file deliberately leaves to prose (the rest of the §8 story).
 #
@@ -2495,6 +2563,11 @@ if __name__ == "__main__":
 
     if "--check-densities" in sys.argv:
         _density_selftest()
+    elif "--check-invariants" in sys.argv:
+        _invariant_selftest()
+    elif "--check" in sys.argv:
+        _density_selftest()
+        _invariant_selftest()
     else:
         _demo()
 
