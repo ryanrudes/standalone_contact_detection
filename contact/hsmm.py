@@ -86,8 +86,6 @@ import markovlib as _markovlib
 import numpy as np
 from scipy.stats import nbinom
 
-from .hmm import logsumexp
-
 __all__ = ["duration_logpmf", "hsmm_viterbi", "hsmm_posteriors", "SemiMarkovHMM"]
 
 # Finite stand-in for log(0); same sentinel convention as contact.hmm so the two
@@ -160,67 +158,13 @@ def duration_logpmf(
     return float(logpmf) if scalar_in else logpmf
 
 
-def _duration_logsf(
-    d: int,
-    mean_dwell_frames: float,
-    concentration: float,
-) -> float:
-    """Log survival function ``log P(duration >= d)`` for one state.
-
-    The right-censored mass a segment scores when it hits the ``max_dur`` cap instead of
-    the point pmf, so a bout longer than the cap is a *censored* segment that may continue
-    (see :func:`_duration_table` and :func:`hsmm_viterbi`). With ``k = d - 1`` and the same
-    ``NB(r, p)`` as :func:`duration_logpmf`, ``P(d >= D) = P(k >= D-1) = P(k > D-2)`` =
-    ``nbinom.logsf(D - 2)`` -- exact, replacing the old finite-tail ``logsumexp`` sum.
-    """
-    r, p = _nb_params(mean_dwell_frames, concentration)
-    return float(nbinom.logsf(d - 2, r, p))
-
-
-def _duration_table(
-    mean_dwell_frames: np.ndarray,
-    concentration: float,
-    max_dur: int,
-) -> np.ndarray:
-    """Precompute the censored duration table ``log_dur[s, d-1]`` for ``d = 1..max_dur``.
-
-    Returns a ``(S, max_dur)`` table so the segmental DP can index durations in
-    O(1). Entries for ``d = 1 .. max_dur - 1`` are the ordinary duration log-pmf
-    ``duration_logpmf(d | s)`` (the segment *ended* at exactly ``d`` frames). The
-    final entry ``d = max_dur`` is the **survival** ``log P(duration >= max_dur)``
-    (the log survival function), i.e. the segment is *right-censored* at the cap and
-    has not necessarily ended.
-
-    This is the standard EDHMM duration-censoring treatment and it is what lets a
-    state persist *beyond* ``max_dur``: a censored (length-``max_dur``) segment may
-    chain into a same-state continuation, so a genuine bout longer than the cap is
-    represented exactly instead of being corrupted by a spurious state flip at the
-    boundary (see :func:`hsmm_viterbi`). The segmental DP pairs the ``d = max_dur``
-    column with same-state continuation; the ``d < max_dur`` columns force a switch.
-    """
-    S = mean_dwell_frames.shape[0]
-    table = np.empty((S, max_dur), dtype=float)
-    if max_dur >= 2:
-        durations = np.arange(1, max_dur, dtype=float)  # d = 1 .. max_dur-1
-        for s in range(S):
-            table[s, : max_dur - 1] = duration_logpmf(
-                durations, float(mean_dwell_frames[s]), concentration
-            )
-    for s in range(S):
-        # The boundary (cap) segment is right-censored: score its survival mass.
-        table[s, max_dur - 1] = _duration_logsf(
-            max_dur, float(mean_dwell_frames[s]), concentration
-        )
-    return table
-
-
 def _default_max_dur(mean_dwell_frames: np.ndarray, max_dur: int | None) -> int:
     """Choose the duration cap ``D`` (a generous multiple of the largest mean dwell).
 
     ``max_dur`` is a *tractability* cap on the per-segment duration loop, NOT a hard
     maximum bout length: thanks to duration censoring (a segment that hits the cap is
     scored by its survival mass and may continue as the same state -- see
-    :func:`_duration_table` and :func:`hsmm_viterbi`), a single state can persist for
+    :func:`hsmm_viterbi`), a single state can persist for
     arbitrarily many frames, so a genuine contact longer than ``D`` is represented
     exactly rather than truncated. The default is scaled off the *largest* per-state
     mean (so no state's typical dwell is unduly censored) and kept generous; an
@@ -273,32 +217,6 @@ def _prep(
         )
 
     return log_emission, log_trans, log_init, mean, T, S
-
-
-def _interseg_logtrans(log_trans: np.ndarray) -> np.ndarray:
-    """Transition matrix restricted to *between-segment* (state-changing) jumps.
-
-    In an HSMM the dwell is owned by the duration model, so a "transition" between
-    two *naturally ended* segments is by definition a move to a *different* state.
-    We therefore zero out the diagonal (set ``log P(s -> s) = -inf``) and renormalise
-    each row over the off-diagonal successors, so the inter-segment transition is a
-    proper distribution over the ``s' != s`` it can jump to.
-
-    Same-state continuation is NOT carried here: it only ever happens across a
-    *duration-censored* boundary (a segment that hit the ``max_dur`` cap and so has
-    not necessarily ended), where the continuation cost is 0 (no jump occurred). The
-    segmental DPs handle that case explicitly, which is what lets a single state --
-    including the degenerate single-state (``S == 1``) model, whose only row here is
-    all ``-inf`` -- persist past the cap (see :func:`hsmm_viterbi`).
-    """
-    A = np.array(log_trans, dtype=float, copy=True)
-    np.fill_diagonal(A, _LOG_ZERO)
-    # Renormalise each row over its (off-diagonal) successors.
-    row_norm = logsumexp(A, axis=1)  # (S,)
-    # Rows that are entirely -inf (a single-state model) stay -inf; guard the divide.
-    safe = np.where(np.isfinite(row_norm) & (row_norm > _LOG_ZERO / 2), row_norm, 0.0)
-    A = A - safe[:, None]
-    return A
 
 
 # ======================================================================================
