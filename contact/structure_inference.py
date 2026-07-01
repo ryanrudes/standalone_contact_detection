@@ -59,6 +59,7 @@ reproducible and never touch global RNG state.
 
 from __future__ import annotations
 
+import markovlib as _markovlib
 import numpy as np
 
 from .hmm import forward_backward, logsumexp, viterbi
@@ -98,39 +99,6 @@ def _p_stay(log_dwell_stay: float) -> float:
     """
     p = float(np.exp(float(log_dwell_stay)))
     return float(np.clip(p, _P_EPS, 1.0 - _P_EPS))
-
-
-def _subset_active_mask(num_edges: int) -> np.ndarray:
-    """``(2**E, E)`` boolean membership matrix; row ``k``'s bit ``e`` is edge ``e`` active.
-
-    Mirrors :func:`contact.graph._subset_active_mask` (the same bitmask convention: state
-    ``k`` is the subset ``{e : bit e of k is set}``, state 0 is the empty set) so the
-    exact estimator here and the contact graph layer agree on the subset ordering. Only
-    used by the *exact* path -- the particle filter never materializes this.
-    """
-    n_subsets = 1 << num_edges
-    edges = np.arange(num_edges)
-    ks = np.arange(n_subsets)[:, None]
-    return ((ks >> edges[None, :]) & 1).astype(bool)
-
-
-def _subset_log_emission(log_evidence: np.ndarray, active_mask: np.ndarray) -> np.ndarray:
-    """``(T, 2**E)`` joint log-emission: per-subset sum of per-edge active/inactive evidence.
-
-    For subset ``k`` (membership ``active_mask[k]``) and frame ``t``::
-
-        log_emission[t, k] = sum_e ( log_evidence[t, e, 1]   if e in k
-                                     else log_evidence[t, e, 0] ).
-
-    Edges observe disjoint body-pairs => conditionally independent given the active set
-    (THEORY.md s.4/s.8), hence the per-edge sum. Vectorized: pick the active or inactive
-    column per (subset, edge) and sum over edges.
-    """
-    li = log_evidence[:, None, :, 0]   # (T, 1, E)  inactive
-    la = log_evidence[:, None, :, 1]   # (T, 1, E)  active
-    m = active_mask[None, :, :]        # (1, 2**E, E)
-    per_edge = np.where(m, la, li)     # (T, 2**E, E)
-    return per_edge.sum(axis=2)        # (T, 2**E)
 
 
 def _subset_log_transition(n_subsets: int, p_stay: float) -> np.ndarray:
@@ -199,9 +167,9 @@ def exact_active_sets(
     del seed  # deterministic; present only for a uniform signature with the PF
     evidence, T, E = _validate_evidence(log_evidence)
 
-    active_mask = _subset_active_mask(E)                       # (2**E, E)
+    active_mask = _markovlib.product_membership(E, 2)          # (2**E, E) factor membership
     n_subsets = active_mask.shape[0]
-    log_emission = _subset_log_emission(evidence, active_mask)  # (T, 2**E)
+    log_emission = _markovlib.product_log_emission(evidence, active_mask)  # (T, 2**E)
     log_trans = _subset_log_transition(n_subsets, _p_stay(log_dwell_stay))
 
     # Initial prior over subsets: favour the empty set (a record usually begins with no
