@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Protocol
 
 import numpy as np
 
@@ -502,12 +503,11 @@ def _compose(terms: tuple) -> np.ndarray:
 class ContactMode:
     """A single latent contact mode, written as a generative model (THEORY.md s.3/s.4).
 
-    Subclasses declare the KINEMATIC density over the (gap, twist) observation -- which
-    channels the mode pins and which it excites, i.e. its physical signature (s.3). The
-    base then layers on the cross-cutting MEASURED-FORCE channel (DESIGN.md II.A), so that
-    optional, gated factor lives in exactly one place instead of being re-pasted into every
-    mode. ``name`` is the ``contact.types`` mode id -- both the registry key and the
-    selector for the mode's force density.
+    A subclass IS its KINEMATIC density over the (gap, twist) observation -- which channels the
+    mode pins and which it excites, i.e. its physical signature (s.3). The cross-cutting, optional
+    MEASURED-FORCE channel (DESIGN.md II.A) is no longer folded in here; it is a separate
+    ``ForceFactor`` in the emission sum (see ``log_emissions``), so a mode stays purely kinematic.
+    ``name`` is the ``contact.types`` mode id -- both the registry key and the force-density selector.
     """
 
     name: str = ""
@@ -517,26 +517,6 @@ class ContactMode:
     ) -> np.ndarray:
         """``(T,)`` log p(gap, twist | mode) -- the mode's kinematic signature (s.3)."""
         raise NotImplementedError
-
-    def log_density(
-        self,
-        obs: ContactObservations,
-        params: EmissionParams,
-        gap_bias: float,
-        material: MaterialParams | None = None,
-        force: ForceEmissionParams | None = None,
-    ) -> np.ndarray:
-        """Full ``(T,)`` log-emission: the kinematic signature plus the optional, gated
-        measured-force channel (DESIGN.md II.A).
-
-        ``material`` is accepted for interface symmetry (a future compliance-aware term,
-        s.7); the kinematic densities here do not yet use it. With no force channel the
-        result is the pure kinematic density.
-        """
-        lp = self.kinematic_log_density(obs, params, gap_bias)
-        if obs.normal_force is not None and force is not None:
-            lp = lp + _force_log_density(obs, self.name, force)  # measured-force (DESIGN.md II.A)
-        return lp
 
 
 class Free(ContactMode):
@@ -732,6 +712,70 @@ MODES: dict[str, ContactMode] = {
 }
 
 
+# --------------------------------------------------------------------------------------
+# Emission factors: the (T, S) grid as a SUM of independent log-contributions (THEORY.md s.4)
+# --------------------------------------------------------------------------------------
+#
+# The emission log-likelihood is a sum of factors on the grid: the always-present kinematic mode
+# bank, plus optional gated channels (the measured-force term here). An absent capability
+# contributes the additive identity ZERO, so "no capability declared => the pure kinematic
+# detector, byte-for-byte" (the DESIGN.md invariant) holds BY CONSTRUCTION rather than via a
+# scattered ``if``; a new evidence channel is one more entry in the factor list. NOTE: measurement
+# tempering (model.detect) is a *multiplicative* per-frame reweighting, not a summand, so it is
+# deliberately NOT an EmissionFactor -- the additive monoid is the emission side only.
+
+_EMISSION_ZERO = 0.0  # additive identity of the (T, S) emission grid
+
+
+class EmissionFactor(Protocol):
+    def contribute(
+        self, obs: ContactObservations, params: EmissionParams, gap_bias: float, states: list[str]
+    ) -> np.ndarray | float:
+        """A (T, len(states)) log-contribution, or ``_EMISSION_ZERO`` when the factor is inactive."""
+        ...
+
+
+class KinematicFactor:
+    """The mode bank (s.3): log p(gap, twist | state) for each requested state. Always present."""
+
+    def contribute(self, obs, params, gap_bias, states):
+        T = int(np.asarray(obs.gap, dtype=float).shape[0])
+        out = np.empty((T, len(states)), dtype=float)
+        for j, name in enumerate(states):
+            try:
+                mode = MODES[name]
+            except KeyError as exc:  # pragma: no cover - defensive
+                raise KeyError(
+                    f"no contact mode registered for state {name!r}; known modes: {sorted(MODES)}"
+                ) from exc
+            out[:, j] = mode.kinematic_log_density(obs, params, gap_bias)
+        return out
+
+
+class ForceFactor:
+    """The optional MEASURED-force channel (DESIGN.md II.A). ZERO when ``obs.normal_force is None``."""
+
+    def __init__(self, force: ForceEmissionParams) -> None:
+        self.force = force
+
+    def contribute(self, obs, params, gap_bias, states):
+        if obs.normal_force is None:
+            return _EMISSION_ZERO
+        T = int(np.asarray(obs.gap, dtype=float).shape[0])
+        out = np.empty((T, len(states)), dtype=float)
+        for j, name in enumerate(states):
+            out[:, j] = _force_log_density(obs, name, self.force)
+        return out
+
+
+def _sum_emissions(factors, obs, params, gap_bias, states) -> np.ndarray:
+    """Left-to-right sum of the factor contributions -- byte-identical to inline accumulation."""
+    total = factors[0].contribute(obs, params, gap_bias, states)
+    for f in factors[1:]:
+        total = total + f.contribute(obs, params, gap_bias, states)
+    return total
+
+
 def log_emissions(
     obs: ContactObservations,
     params: EmissionParams,
@@ -780,14 +824,7 @@ def log_emissions(
     KeyError
         If a requested state has no registered builder.
     """
-    T = int(np.asarray(obs.gap, dtype=float).shape[0])
-    out = np.empty((T, len(states)), dtype=float)
-    for j, name in enumerate(states):
-        try:
-            mode = MODES[name]
-        except KeyError as exc:  # pragma: no cover - defensive
-            raise KeyError(
-                f"no contact mode registered for state {name!r}; known modes: {sorted(MODES)}"
-            ) from exc
-        out[:, j] = mode.log_density(obs, params, gap_bias, material, force)
-    return out
+    factors: list[EmissionFactor] = [KinematicFactor()]
+    if force is not None:
+        factors.append(ForceFactor(force))
+    return _sum_emissions(factors, obs, params, gap_bias, states)

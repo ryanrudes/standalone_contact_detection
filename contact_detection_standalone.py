@@ -1034,18 +1034,16 @@ def _compose(terms: tuple) -> np.ndarray:
 
 
 class ContactMode:
-    """A latent mode as a generative model: a kinematic signature + the optional force channel."""
+    """A latent mode as a generative model: PURELY its kinematic signature over (gap, twist) (§3).
+
+    The optional measured-force channel is not folded in here — it is a separate ``ForceFactor`` in
+    the emission sum (see ``log_emissions``), so a mode stays a pure kinematic density.
+    """
 
     name: str = ""
 
     def kinematic_log_density(self, obs: ContactObservations, params: EmissionParams, gap_bias: float) -> np.ndarray:
         raise NotImplementedError
-
-    def log_density(self, obs, params, gap_bias, material=None, force=None):
-        lp = self.kinematic_log_density(obs, params, gap_bias)
-        if obs.normal_force is not None and force is not None:
-            lp = lp + _force_log_density(obs, self.name, force)
-        return lp
 
 
 class Free(ContactMode):
@@ -1157,13 +1155,69 @@ class Impact(ContactMode):
 MODES: dict[str, ContactMode] = {m.name: m for m in (Free(), Static(), Sliding(), Pivoting(), Rolling(), Impact())}
 
 
+# --- §4 (assembly): the emission grid as a SUM of EmissionFactors -------------------------
+# The (T, S) emission log-likelihood is a sum of independent log-contributions on the grid: the
+# always-present kinematic mode bank, plus optional gated channels (the measured force here; the
+# package adds measurement tempering as a *multiplicative* post-step, which is NOT a summand). An
+# absent capability contributes the additive identity ZERO, so "no capability declared ⇒ the pure
+# kinematic detector, byte-for-byte" (the DESIGN.md invariant) holds BY CONSTRUCTION rather than
+# via a scattered ``if``. New evidence = one more entry in the factor list; nothing else moves.
+
+_EMISSION_ZERO = 0.0  # additive identity of the (T, S) emission grid
+
+
+class EmissionFactor(Protocol):
+    def contribute(self, obs, params, gap_bias, states) -> np.ndarray | float:
+        """A (T, len(states)) log-contribution, or ``_EMISSION_ZERO`` when the factor is inactive."""
+        ...
+
+
+class KinematicFactor:
+    """The mode bank (§3): log p(gap, twist | state) for each state. Always present."""
+
+    def contribute(self, obs, params, gap_bias, states) -> np.ndarray:
+        T = int(np.asarray(obs.gap, dtype=float).shape[0])
+        out = np.empty((T, len(states)), dtype=float)
+        for j, name in enumerate(states):
+            out[:, j] = MODES[name].kinematic_log_density(obs, params, gap_bias)
+        return out
+
+
+class ForceFactor:
+    """The optional measured-force channel (§7). ZERO when no force is observed (``obs.normal_force is None``)."""
+
+    def __init__(self, force: ForceEmissionParams) -> None:
+        self.force = force
+
+    def contribute(self, obs, params, gap_bias, states) -> np.ndarray | float:
+        if obs.normal_force is None:
+            return _EMISSION_ZERO
+        T = int(np.asarray(obs.gap, dtype=float).shape[0])
+        out = np.empty((T, len(states)), dtype=float)
+        for j, name in enumerate(states):
+            out[:, j] = _force_log_density(obs, name, self.force)
+        return out
+
+
+def _sum_emissions(factors, obs, params, gap_bias, states) -> np.ndarray:
+    """Left-to-right sum of the factors' contributions — bit-for-bit with the inline accumulation."""
+    total = factors[0].contribute(obs, params, gap_bias, states)
+    for f in factors[1:]:
+        total = total + f.contribute(obs, params, gap_bias, states)
+    return total
+
+
 def log_emissions(obs, params, gap_bias, states, material=None, force=None) -> np.ndarray:
-    """Assemble the (T, len(states)) emission log-likelihood matrix; column j = log p(obs | states[j])."""
-    T = int(np.asarray(obs.gap, dtype=float).shape[0])
-    out = np.empty((T, len(states)), dtype=float)
-    for j, name in enumerate(states):
-        out[:, j] = MODES[name].log_density(obs, params, gap_bias, material, force)
-    return out
+    """Assemble the (T, len(states)) emission log-likelihood as a SUM of EmissionFactors.
+
+    Column j = log p(obs | states[j]) = the kinematic mode bank + any active optional factor. An
+    absent capability adds nothing (the ZERO identity), so kinematics-only is byte-for-byte the
+    pure detector — the DESIGN.md no-op-when-absent invariant, made structural.
+    """
+    factors: list[EmissionFactor] = [KinematicFactor()]
+    if force is not None:
+        factors.append(ForceFactor(force))
+    return _sum_emissions(factors, obs, params, gap_bias, states)
 
 
 # ======================================================================================
