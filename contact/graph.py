@@ -44,6 +44,7 @@ for the support-relative channels, :mod:`contact.hmm` for the joint inference, a
 from __future__ import annotations
 
 import dataclasses
+from typing import Protocol
 
 import numpy as np
 
@@ -420,6 +421,46 @@ def _consistency_factors(
 # --------------------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------------------
+# Subset emission factors: the (T, 2^E) grid as a SUM of SubsetFactors (THEORY.md s.8)
+# --------------------------------------------------------------------------------------
+#
+# Symmetric with the single-pair EmissionFactor sum (contact.emissions), one grid up: the subset
+# emission is the always-present per-edge evidence plus the optional global consistency factors
+# (energy / balance), each a no-op (the ZERO identity) when its capability is off. A distinct
+# family from the (T, S) EmissionFactor -- different grid and inputs -- sharing the additive shape.
+
+_SUBSET_ZERO = 0.0  # additive identity of the (T, 2^E) subset-emission grid
+
+
+class SubsetFactor(Protocol):
+    def contribute(self) -> np.ndarray | float:
+        """A (T, 2^E) log-contribution over the active-set alphabet, or ``_SUBSET_ZERO`` when off."""
+        ...
+
+
+class SubsetEvidenceFactor:
+    """Per-edge log-evidence summed over each active set (always present)."""
+
+    def __init__(self, log_active: np.ndarray, log_inactive: np.ndarray, active_mask: np.ndarray) -> None:
+        self.log_active = log_active
+        self.log_inactive = log_inactive
+        self.active_mask = active_mask
+
+    def contribute(self) -> np.ndarray:
+        return _subset_log_emission(self.log_active, self.log_inactive, self.active_mask)
+
+
+class _ArraySubsetFactor:
+    """Wraps a precomputed (T, n_subsets) log-factor (energy / balance from :mod:`contact.consistency`)."""
+
+    def __init__(self, array: np.ndarray) -> None:
+        self.array = array
+
+    def contribute(self) -> np.ndarray:
+        return self.array
+
+
 def detect_scene(
     scene: MultiBodyScene,
     config: DetectorConfig | None = None,
@@ -583,14 +624,17 @@ def detect_scene(
         active_mask = _subset_active_mask(E)     # (n_subsets, E) membership
         n_subsets = len(subsets)
 
-        log_emission = _subset_log_emission(log_active, log_inactive, active_mask)  # (T, n_subsets)
-
-        # Optional global consistency factors (energy / balance), added in log-space (s.8).
+        # Subset emission = a SUM of SubsetFactors: the always-present per-edge evidence + the
+        # optional global consistency factors (energy / balance), each a no-op when off (s.8).
         energy, balance, diag = _consistency_factors(scene, edges, subsets, cfg, T)
+        factors: list[SubsetFactor] = [SubsetEvidenceFactor(log_active, log_inactive, active_mask)]
         if energy is not None:
-            log_emission = log_emission + energy
+            factors.append(_ArraySubsetFactor(energy))
         if balance is not None:
-            log_emission = log_emission + balance
+            factors.append(_ArraySubsetFactor(balance))
+        log_emission = factors[0].contribute()  # (T, n_subsets)
+        for f in factors[1:]:
+            log_emission = log_emission + f.contribute()
 
         # Temporal prior on the subset sequence: a Markov chain with the active-set dwell
         # self-transition (THEORY.md s.5 lifted to the structure level, s.8).

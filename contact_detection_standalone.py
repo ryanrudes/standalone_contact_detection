@@ -2215,6 +2215,49 @@ def _subset_log_transition(n_subsets: int, dt: float, dwell_time: float) -> np.n
     return np.log(A)
 
 
+# --- §8 (assembly): the subset-emission grid as a SUM of SubsetFactors --------------------
+# Symmetric with the single-pair EmissionFactor sum, one grid up: the (T, 2^E) subset emission is
+# the always-present per-edge evidence plus optional soft global factors (energy here), each a
+# no-op (the ZERO identity) when its capability is off. Different grid + inputs than the (T, S)
+# EmissionFactor, so a distinct family — the two share the additive-sum shape, not the code.
+
+_SUBSET_ZERO = 0.0  # additive identity of the (T, 2^E) subset-emission grid
+
+
+class SubsetFactor(Protocol):
+    def contribute(self) -> np.ndarray | float:
+        """A (T, 2^E) log-contribution over the active-set alphabet, or ``_SUBSET_ZERO`` when off."""
+        ...
+
+
+class SubsetEvidenceFactor:
+    """Per-edge log-evidence summed over each active set: Σ_e (active if e∈subset else inactive). Always present."""
+
+    def __init__(self, log_active, log_inactive, active_mask) -> None:
+        self.log_active = log_active
+        self.log_inactive = log_inactive
+        self.active_mask = active_mask
+
+    def contribute(self) -> np.ndarray:
+        m = self.active_mask
+        return np.where(m[None, :, :], self.log_active[:, None, :], self.log_inactive[:, None, :]).sum(axis=2)
+
+
+class SubsetEnergyFactor:
+    """The optional soft energy/dissipation consistency factor (§8). ZERO when disabled or all-zeros."""
+
+    def __init__(self, scene, edges, subsets, masses, shape) -> None:
+        self.scene = scene
+        self.edges = edges
+        self.subsets = subsets
+        self.masses = masses
+        self.shape = shape
+
+    def contribute(self) -> np.ndarray | float:
+        energy = np.asarray(energy_log_factor(self.scene, self.edges, self.subsets, self.masses), dtype=float)
+        return energy if (energy.shape == self.shape and np.any(energy)) else _SUBSET_ZERO
+
+
 def detect_scene(scene: MultiBodyScene, config: DetectorConfig | None = None) -> GraphDetectionResult:
     """Infer the joint active-set posterior over a multi-body contact graph (§8).
 
@@ -2256,17 +2299,17 @@ def detect_scene(scene: MultiBodyScene, config: DetectorConfig | None = None) ->
     subsets = _enumerate_subsets(E)
     active_mask = _subset_active_mask(E)
     n_subsets = len(subsets)
-    # subset emission = Σ_e (active if e∈subset else inactive) log-evidence.
-    log_emission = np.where(active_mask[None, :, :], log_active[:, None, :], log_inactive[:, None, :]).sum(axis=2)
-
-    energy_active = False
+    # subset emission = a SUM of SubsetFactors: always-present per-edge evidence + the optional
+    # energy/dissipation factor (ZERO when disabled or all-zeros ⇒ a no-op by construction).
+    factors: list[SubsetFactor] = [SubsetEvidenceFactor(log_active, log_inactive, active_mask)]
     if getattr(cfg.graph, "use_energy_prior", False):
         masses = scene.meta.get("masses") if isinstance(scene.meta, dict) else None
-        energy = energy_log_factor(scene, edges, subsets, masses)
-        energy = np.asarray(energy, dtype=float)
-        if energy.shape == (T, n_subsets) and np.any(energy):
-            log_emission = log_emission + energy
-            energy_active = True
+        factors.append(SubsetEnergyFactor(scene, edges, subsets, masses, (T, n_subsets)))
+    contributions = [f.contribute() for f in factors]
+    log_emission = contributions[0]
+    for c in contributions[1:]:
+        log_emission = log_emission + c
+    energy_active = len(factors) > 1 and isinstance(contributions[1], np.ndarray)
 
     dt = _median_dt(t)
     log_trans = _subset_log_transition(n_subsets, dt, cfg.graph.active_set_dwell_time)
