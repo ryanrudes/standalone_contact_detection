@@ -53,6 +53,7 @@ This module imports only :mod:`contact.types` and :mod:`contact.config`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
@@ -371,6 +372,121 @@ def _force_log_density(
 
 
 # --------------------------------------------------------------------------------------
+# The channel densities as first-class objects (THEORY.md sections 3 & 4).
+#
+# Each contact mode is a PRODUCT of independent per-channel densities (a SUM of these
+# log-densities); the modes differ only in WHICH density sits on each channel. Naming each
+# density as a small immutable object lets a mode read as its generative signature (s.3), and
+# keeps every normalization constant a property that can be tested in isolation (each .logpdf is
+# a proper density -- see tests/test_density.py). Every .logpdf is a thin wrapper over the
+# primitives above, so a composed mode is byte-identical to the inline accumulation it replaces.
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Normal1D:
+    """log N(x; mean, sigma^2) on R -- a proper density (normalizer included)."""
+
+    mean: float
+    sigma: float
+
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        return _log_normal_1d(x, self.mean, self.sigma)
+
+
+@dataclass(frozen=True)
+class IsoNormal2D:
+    """Isotropic zero-mean 2-D Gaussian N(0, sigma^2 I) on R^2."""
+
+    sigma: float
+
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        return _log_normal_2d_iso(x, self.sigma)
+
+
+@dataclass(frozen=True)
+class SplitNormalGap:
+    """Two-piece Gaussian gap density: sigma_hi above the mean, sigma_lo below (s.2). Equal sigmas => N(mean, sigma^2)."""
+
+    mean: float
+    sigma_hi: float
+    sigma_lo: float
+
+    def logpdf(self, gap: np.ndarray) -> np.ndarray:
+        return _log_split_normal_gap(gap, self.mean, self.sigma_hi, self.sigma_lo)
+
+
+@dataclass(frozen=True)
+class OffsetMagnitude1D:
+    """Proper density on R peaked at +/- speed (sign uninformative). speed -> 0 => N(0, sigma^2)."""
+
+    speed: float
+    sigma: float
+
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        return _log_offset_magnitude_1d(x, self.speed, self.sigma)
+
+
+@dataclass(frozen=True)
+class OffsetMagnitude2D:
+    """Proper R^2 density on the ring |x| = speed. speed -> 0 => the isotropic Gaussian IsoNormal2D(sigma)."""
+
+    speed: float
+    sigma: float
+
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        return _log_offset_magnitude_2d(x, self.speed, self.sigma)
+
+
+@dataclass(frozen=True)
+class MixZero1D:
+    """Zero-mean 1-D Gaussian mixture (1-w)*N(0,s_t^2) + w*N(0,s_b^2). w -> 0 => N(0, s_t^2)."""
+
+    sigma_tight: float
+    sigma_broad: float
+    w_broad: float
+
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        return _log_mix_zero_1d(x, self.sigma_tight, self.sigma_broad, self.w_broad)
+
+
+@dataclass(frozen=True)
+class MixZero2D:
+    """Zero-mean isotropic 2-D Gaussian mixture (the R^2 analogue of MixZero1D)."""
+
+    sigma_tight: float
+    sigma_broad: float
+    w_broad: float
+
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        return _log_mix_zero_2d(x, self.sigma_tight, self.sigma_broad, self.w_broad)
+
+
+@dataclass(frozen=True)
+class UniformClearance:
+    """Diffuse uniform gap prior of total width ``width`` -- the FREE clearance (no surface pins the gap)."""
+
+    width: float
+
+    def logpdf(self, gap: np.ndarray) -> np.ndarray:
+        return _log_uniform(self.width) * np.ones_like(np.asarray(gap, dtype=float))
+
+
+def _compose(terms: tuple) -> np.ndarray:
+    """Sum a sequence of ``(channel_value, Density)`` into one per-frame log-density.
+
+    Reduced strictly left-to-right so the result is byte-identical to the equivalent
+    ``lp = d0.logpdf(x0); lp = lp + d1.logpdf(x1); ...`` accumulation (float addition is
+    not associative, so the order is load-bearing for the standalone-equivalence gate).
+    """
+    (x0, d0), rest = terms[0], terms[1:]
+    lp = d0.logpdf(x0)
+    for x, d in rest:
+        lp = lp + d.logpdf(x)
+    return lp
+
+
+# --------------------------------------------------------------------------------------
 # The contact modes (THEORY.md section 3) as generative models.
 # --------------------------------------------------------------------------------------
 #
@@ -438,26 +554,13 @@ class Free(ContactMode):
     name = FREE
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _log_uniform(params.gap_free_range) * np.ones_like(np.asarray(obs.gap, dtype=float))
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.free_vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
-        return lp
-
-
-def _contact_gap_logpdf(
-    obs: ContactObservations, params: EmissionParams, gap_bias: float
-) -> np.ndarray:
-    """Shared gap term for every contact mode: split-normal about ``gap_bias``.
-
-    All contact modes pin the gap to the resting bias with the same asymmetric,
-    bounded density (THEORY.md sections 2 & 4). Factored out so the modes differ only
-    in their *twist* terms (section 3).
-    """
-    return _log_split_normal_gap(
-        obs.gap, gap_bias, params.gap_sigma_gap, params.gap_sigma_pen
-    )
+        return _compose((
+            (obs.gap,           UniformClearance(params.gap_free_range)),
+            (obs.v_normal,      Normal1D(0.0, params.free_vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.free_vel_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.free_omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.free_omega_sigma)),
+        ))
 
 
 class Static(ContactMode):
@@ -474,12 +577,13 @@ class Static(ContactMode):
     name = STATIC
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _contact_gap_logpdf(obs, params, gap_bias)
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
-        return lp
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)),
+            (obs.v_normal,      Normal1D(0.0, params.vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.vel_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.omega_sigma)),
+        ))
 
 
 class Sliding(ContactMode):
@@ -497,21 +601,18 @@ class Sliding(ContactMode):
     name = SLIDING
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        # The tangential SPEED is appreciable but a sliding body sweeps a whole RANGE of
-        # speeds (it accelerates, decelerates, drags to rest), so the ring must be BROAD in
-        # magnitude, not a razor peak at one speed (which would reject every other speed and
-        # flip the frame to FREE). Width scales with slide_speed, floored at vel_sigma.
+        # v_tangent rides a BROAD ring (a slider sweeps a range of speeds; width floored at
+        # vel_sigma). omega is OFF-subspace: usually resting but a struck ball slides while
+        # spinning up, so a heavy-tailed tight+broad mixture, not a single tight Gaussian.
         slide_width = max(params.vel_sigma, params.slide_width_frac * params.slide_speed)
-        lp = _contact_gap_logpdf(obs, params, gap_bias)
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-        lp = lp + _log_offset_magnitude_2d(obs.v_tangent, params.slide_speed, slide_width)
-        # omega is OFF-subspace: a sliding body usually isn't spinning (reward omega~0) but
-        # CAN be (a struck ball slides while spinning up). A heavy-tailed tight+broad mixture
-        # does both; a single tight Gaussian drove the spinning-slider to ~-2000 -> FREE.
         wb = params.slide_omega_broad_weight
-        lp = lp + _log_mix_zero_1d(obs.omega_normal, params.omega_sigma, params.free_omega_sigma, wb)
-        lp = lp + _log_mix_zero_2d(obs.omega_tangent, params.omega_sigma, params.free_omega_sigma, wb)
-        return lp
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)),
+            (obs.v_normal,      Normal1D(0.0, params.vel_sigma)),
+            (obs.v_tangent,     OffsetMagnitude2D(params.slide_speed, slide_width)),
+            (obs.omega_normal,  MixZero1D(params.omega_sigma, params.free_omega_sigma, wb)),
+            (obs.omega_tangent, MixZero2D(params.omega_sigma, params.free_omega_sigma, wb)),
+        ))
 
 
 class Pivoting(ContactMode):
@@ -529,12 +630,13 @@ class Pivoting(ContactMode):
     name = PIVOTING
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _contact_gap_logpdf(obs, params, gap_bias)
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.vel_sigma)
-        lp = lp + _log_offset_magnitude_1d(obs.omega_normal, params.pivot_speed, params.omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.omega_sigma)
-        return lp
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)),
+            (obs.v_normal,      Normal1D(0.0, params.vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.vel_sigma)),
+            (obs.omega_normal,  OffsetMagnitude1D(params.pivot_speed, params.omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.omega_sigma)),
+        ))
 
 
 class Rolling(ContactMode):
@@ -574,18 +676,20 @@ class Rolling(ContactMode):
         speed_t = np.sqrt(np.sum(v_t * v_t, axis=-1))
         omega_t = np.sqrt(np.sum(w_t * w_t, axis=-1))
         residual = speed_t - params.roll_radius * omega_t  # the rolling-constraint residual
-
         log_z_res = _log_rolling_residual_normalizer(
             params.free_vel_sigma, params.free_omega_sigma, params.roll_radius, params.roll_sigma
         )
-        lp = _contact_gap_logpdf(obs, params, gap_bias)
-        lp = lp + _log_normal_1d(obs.v_normal, 0.0, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(v_t, params.free_vel_sigma)      # broad magnitude prior
-        lp = lp + _log_normal_2d_iso(w_t, params.free_omega_sigma)    # broad magnitude prior
-        lp = lp + _log_normal_1d(residual, 0.0, params.roll_sigma)    # the defining coupling
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.omega_sigma)
-        lp = lp - log_z_res                                          # renormalize the joint
-        return lp
+        # The ONE non-product mode: v_tangent and omega_tangent are coupled through the residual,
+        # so the tangential block is renormalized by Z_res. In the composition the coupling is just
+        # a derived channel (residual) and Z_res a trailing block normalizer -- no special case.
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, params.gap_sigma_gap, params.gap_sigma_pen)),
+            (obs.v_normal,      Normal1D(0.0, params.vel_sigma)),
+            (v_t,               IsoNormal2D(params.free_vel_sigma)),
+            (w_t,               IsoNormal2D(params.free_omega_sigma)),
+            (residual,          Normal1D(0.0, params.roll_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.omega_sigma)),
+        )) - log_z_res
 
 
 class Impact(ContactMode):
@@ -607,14 +711,13 @@ class Impact(ContactMode):
     name = IMPACT
 
     def kinematic_log_density(self, obs, params, gap_bias):
-        lp = _log_split_normal_gap(
-            obs.gap, gap_bias, 2.0 * params.gap_sigma_gap, 2.0 * params.gap_sigma_pen
-        )
-        lp = lp + _log_offset_magnitude_1d(obs.v_normal, params.impact_speed, params.vel_sigma)
-        lp = lp + _log_normal_2d_iso(obs.v_tangent, params.free_vel_sigma)
-        lp = lp + _log_normal_1d(obs.omega_normal, 0.0, params.free_omega_sigma)
-        lp = lp + _log_normal_2d_iso(obs.omega_tangent, params.free_omega_sigma)
-        return lp
+        return _compose((
+            (obs.gap,           SplitNormalGap(gap_bias, 2.0 * params.gap_sigma_gap, 2.0 * params.gap_sigma_pen)),
+            (obs.v_normal,      OffsetMagnitude1D(params.impact_speed, params.vel_sigma)),
+            (obs.v_tangent,     IsoNormal2D(params.free_vel_sigma)),
+            (obs.omega_normal,  Normal1D(0.0, params.free_omega_sigma)),
+            (obs.omega_tangent, IsoNormal2D(params.free_omega_sigma)),
+        ))
 
 
 # --------------------------------------------------------------------------------------
