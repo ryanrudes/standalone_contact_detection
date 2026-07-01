@@ -37,8 +37,8 @@ discovery itself does not use, need, or trust those names.
 Backward compatibility
 -----------------------
 Nothing here is invoked by the default detection path; it is opt-in research code. It
-imports only :mod:`contact.types`, :mod:`contact.config`, :mod:`contact.hmm`, numpy and
-scipy.
+imports only :mod:`contact.types`, :mod:`contact.config`, :mod:`markovlib` (whose
+:func:`~markovlib.sample_path` draws the label path), and numpy.
 
 Public API
 ----------
@@ -48,10 +48,10 @@ Public API
 
 from __future__ import annotations
 
+import markovlib as _markovlib
 import numpy as np
 
 from .config import InferenceParams
-from .hmm import logsumexp
 from .types import (
     FREE,
     IMPACT,
@@ -197,45 +197,6 @@ def _gaussian_emission_loglik(
     return -0.5 * (quad + log_norm[None, :])
 
 
-def _forward_filter_backward_sample(
-    log_emission: np.ndarray,
-    log_trans: np.ndarray,
-    log_init: np.ndarray,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """Sample a label path z_{1:T} ~ p(z | x) (forward-filter, backward-sample).
-
-    The stochastic counterpart of :func:`contact.hmm.forward_backward`: the same
-    log-space forward (alpha) recursion gives the filtered distributions, then we sample
-    backward from ``p(z_t | z_{t+1}, x_{1:t})`` so the drawn path is an exact joint
-    sample from the posterior over state sequences (not a per-frame independent draw).
-    This is step (1) of the blocked Gibbs sweep.
-    """
-    T, L = log_emission.shape
-    log_alpha = np.empty((T, L), dtype=float)
-    log_alpha[0] = log_init + log_emission[0]
-    for t in range(1, T):
-        prev = log_alpha[t - 1][:, None] + log_trans            # (L_prev, L_cur)
-        log_alpha[t] = log_emission[t] + logsumexp(prev, axis=0)
-
-    z = np.empty(T, dtype=np.intp)
-    # Backward sample: last frame from the filtered marginal alpha[T-1].
-    logp = log_alpha[T - 1] - logsumexp(log_alpha[T - 1])
-    z[T - 1] = _sample_logp(logp, rng)
-    for t in range(T - 2, -1, -1):
-        # p(z_t | z_{t+1}) ∝ alpha[t, z_t] * A[z_t, z_{t+1}].
-        logp = log_alpha[t] + log_trans[:, z[t + 1]]
-        logp = logp - logsumexp(logp)
-        z[t] = _sample_logp(logp, rng)
-    return z
-
-
-def _sample_logp(logp: np.ndarray, rng: np.random.Generator) -> int:
-    """Draw a category from a log-probability vector (Gumbel-max, numerically safe)."""
-    g = rng.gumbel(size=logp.shape)
-    return int(np.argmax(logp + g))
-
-
 def _dirichlet(alpha: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Dirichlet sample via independent Gammas (with a tiny floor on the shapes)."""
     a = np.maximum(np.asarray(alpha, dtype=float), 1e-6)
@@ -268,7 +229,7 @@ def discover_modes(
     Inference -- **partially-collapsed blocked Gibbs sampling** (this is the documented
     approximation):
         each sweep (a) jointly samples the label path by forward-filter/backward-sample
-        (reusing the package's log-space forward recursion), (b) sets the sticky
+        (markovlib's :func:`~markovlib.sample_path`), (b) sets the sticky
         transition rows to their prior *mean* ``(alpha*beta + kappa*e_k)/Z`` --
         deterministic given ``beta`` (see :func:`_sticky_rows`), *not* a fresh Dirichlet
         draw from transition counts -- so the data reach the transitions only through
@@ -361,7 +322,8 @@ def discover_modes(
         log_em = _gaussian_emission_loglik(z_std, mu, var)        # (T, L)
         pi = _sticky_rows(beta, alpha, kappa, L)                  # (L, L) rows sum to 1
         log_trans = np.log(pi)
-        z = _forward_filter_backward_sample(log_em, log_trans, log_init, rng)
+        chain = _markovlib.DiscreteChain(log_init=log_init, log_trans=log_trans)
+        z = _markovlib.sample_path(chain, log_em, rng=rng)
 
         # (2) Resample the shared menu beta from the per-state usage counts. The sticky
         # transition rows themselves are NOT resampled from a Dirichlet posterior: they
