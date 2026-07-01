@@ -62,7 +62,7 @@ from __future__ import annotations
 import markovlib as _markovlib
 import numpy as np
 
-from .hmm import forward_backward, logsumexp, viterbi
+from .hmm import forward_backward, viterbi
 
 __all__ = ["exact_active_sets", "particle_filter_active_sets", "StructurePosterior"]
 
@@ -204,20 +204,6 @@ def exact_active_sets(
 # ======================================================================================
 
 
-def _log_dwell_pair(
-    set_to: np.ndarray, set_from: np.ndarray, p_stay: float, n_subsets: int
-) -> float:
-    """log P(set_from -> set_to) under the structure-level dwell transition.
-
-    The closed form of the same chain :func:`_subset_log_transition` tabulates -- evaluated
-    for a *single* pair of sets in O(E), so the backward pass never forms the ``2**E`` x
-    ``2**E`` matrix. ``p_stay`` on the diagonal, ``(1 - p_stay) / (n_subsets - 1)`` off it.
-    """
-    if np.array_equal(set_to, set_from):
-        return float(np.log(p_stay))
-    return float(np.log((1.0 - p_stay) / (n_subsets - 1)))
-
-
 def _initial_particles(
     n_particles: int, E: int, rng: np.random.Generator
 ) -> np.ndarray:
@@ -261,33 +247,6 @@ def _propose_next(parts: np.ndarray, p_stay: float, rng: np.random.Generator) ->
     return out
 
 
-def _systematic_resample(log_w: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """Systematic resampling indices from log weights ``log_w`` (``(N,)``).
-
-    Systematic (a.k.a. stratified-with-one-uniform) resampling: one uniform draw
-    ``u ~ U[0, 1/N)`` defines ``N`` equally spaced pointers ``(u + i)/N`` into the
-    cumulative weight, giving lower-variance, ``O(N)`` resampling than multinomial. Weights
-    are exponentiated from a max-shifted log to avoid underflow.
-    """
-    w = np.exp(log_w - np.max(log_w))
-    w /= w.sum()
-    N = w.shape[0]
-    positions = (rng.random() + np.arange(N)) / N
-    return np.searchsorted(np.cumsum(w), positions, side="left").clip(max=N - 1)
-
-
-def _unique_sets(parts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Collapse a particle cloud to its distinct sets and an inverse index.
-
-    Returns ``(uniq, inv)`` where ``uniq`` is ``(U, E)`` of the distinct sets present and
-    ``inv`` maps each particle to its row in ``uniq``. The Rao-Blackwellized smoother works
-    on these *distinct* sets (a handful, even for large E, since the cloud concentrates on
-    data-supported sets), which is what keeps the backward pass off the ``2**E`` alphabet.
-    """
-    uniq, inv = np.unique(parts, axis=0, return_inverse=True)
-    return uniq, inv.ravel()
-
-
 def particle_filter_active_sets(
     log_evidence: np.ndarray,
     log_dwell_stay: float,
@@ -312,7 +271,7 @@ def particle_filter_active_sets(
     2. **Weight** by the frame's emission: a particle's log-weight is the per-edge evidence
        sum ``sum_e log_evidence[t, e, active_e]`` for its set (the same conditional-
        independence factorization as the exact path).
-    3. **Resample** systematically (:func:`_systematic_resample`).
+    3. **Resample** systematically.
 
     The forward pass *also* records, per frame, the distinct sets the resampled cloud
     occupies and their (pre-resampling) forward weights -- the empirical forward
@@ -320,8 +279,8 @@ def particle_filter_active_sets(
 
     **Backward (marginal smoother).** A standard FFBS backward recursion turns the stored
     forward weights into smoothing weights, using the analytic dwell transition
-    (:func:`_log_dwell_pair`, ``O(E)`` per pair) evaluated *only between the visited sets*
-    of adjacent frames -- never over the ``2**E`` alphabet. The Rao-Blackwellized per-edge
+    (``O(E)`` per pair) evaluated *only between the visited sets* of adjacent frames --
+    never over the ``2**E`` alphabet. The Rao-Blackwellized per-edge
     marginal is then the smoothing-weight-average of set membership (a conditional
     expectation, lower variance than raw particle frequencies by the Rao-Blackwell theorem),
     which is what lets a moderate particle count meet the exact reference.
@@ -358,77 +317,42 @@ def particle_filter_active_sets(
     """
     evidence, T, E = _validate_evidence(log_evidence)
     n_particles = max(int(n_particles), 1)
-    rng = np.random.default_rng(int(seed))
     p_stay = _p_stay(log_dwell_stay)
     n_subsets = 1 << E
+    log_stay = float(np.log(p_stay))
+    log_switch = float(np.log((1.0 - p_stay) / (n_subsets - 1)))
 
-    # --- Forward bootstrap pass; record per-frame distinct sets + forward log-weights. --
-    # `fwd_sets[t]`    : (U_t, E) distinct sets after frame t's resample.
-    # `fwd_logw[t]`    : (U_t,)   forward log-weight mass on each distinct set (filtering
-    #                              distribution p(A_t | o_{0:t}), in log, up to a constant).
-    fwd_sets: list[np.ndarray] = []
-    fwd_logw: list[np.ndarray] = []
+    # The active-set chain expressed as a particle model: each particle is one active set (an E-bit
+    # vector, carried as float 0/1 rows so np.unique / weighted-averaging are exact). markovlib runs the
+    # generic Rao-Blackwellized particle smoother -- a forward bootstrap pass that records the visited
+    # supports, then a backward FFBS over them; what is contact-specific is the *model*, supplied as the
+    # four callables below: the soft init, the dwell-law proposal, the factored per-edge emission, and
+    # the analytic dwell transition evaluated only between visited sets.
+    def sample_prior(rng: np.random.Generator, n: int) -> np.ndarray:
+        return _initial_particles(n, E, rng).astype(np.float64)
 
-    parts = _initial_particles(n_particles, E, rng)  # (N, E) bool
-    for t in range(T):
-        if t > 0:
-            parts = _propose_next(parts, p_stay, rng)
+    def propagate(rng: np.random.Generator, parts: np.ndarray) -> np.ndarray:
+        return _propose_next(parts.astype(bool), p_stay, rng).astype(np.float64)
 
-        ev_t = evidence[t]  # (E, 2)
-        emit = np.where(parts, ev_t[:, 1][None, :], ev_t[:, 0][None, :]).sum(axis=1)  # (N,)
-        # The frame-0 cloud is already SAMPLED from the exact-path initial prior by
-        # _initial_particles (each set appears with frequency proportional to init(k)), so
-        # the prior is represented once, in the particle frequencies. The bare emission is
-        # therefore the correct weight at every frame; adding log init(k) here too would
-        # multiply by the prior a SECOND time and bias the frame-0 marginal toward
-        # init(k)**2 * emit(k) -- an inconsistency that does not vanish as N -> infinity.
-        # Later frames absorb the transition prior through the proposal in _propose_next.
+    def log_likelihood(ev_t: np.ndarray, parts: np.ndarray) -> np.ndarray:
+        # sum_e log_evidence[t, e, active_e] per particle -- the same conditional-independence
+        # factorization the exact path uses (ev_t is (E, 2); parts is (N, E)). The frame-0 prior is
+        # already carried by the sampled cloud, so the bare emission is the correct weight everywhere.
+        active = parts.astype(bool)
+        return np.where(active, ev_t[:, 1][None, :], ev_t[:, 0][None, :]).sum(axis=1)
 
-        # Collapse to distinct sets and accumulate each set's forward log-mass (logsumexp of
-        # the particle weights that landed on it). Equal proposal multiplicity is implicit in
-        # how many particles occupy a set, so summing their weights is the empirical mass.
-        uniq, inv = _unique_sets(parts)
-        logw = np.full(uniq.shape[0], -np.inf)
-        for k in range(uniq.shape[0]):
-            members = emit[inv == k]
-            logw[k] = logsumexp(members) if members.size else -np.inf
-        fwd_sets.append(uniq)
-        fwd_logw.append(logw)
+    def log_transition(sets_from: np.ndarray, sets_to: np.ndarray) -> np.ndarray:
+        # (U_from, U_to) dwell law: p_stay on equal sets, (1 - p_stay)/(2**E - 1) off -- the closed
+        # form _subset_log_transition tabulates, evaluated only between the (few) visited sets.
+        same = (sets_from.astype(bool)[:, None, :] == sets_to.astype(bool)[None, :, :]).all(axis=2)
+        return np.where(same, log_stay, log_switch)
 
-        idx = _systematic_resample(emit, rng)
-        parts = parts[idx]
-
-    # --- Backward FFBS pass over the *visited* sets only (never the 2**E alphabet). -----
-    # smoothing log-weight s_t(i) = f_t(i) + logsumexp_j [ log T(set_i -> set_j)
-    #                                                      + s_{t+1}(j) - pred_{t+1}(j) ]
-    # where f_t is the (normalized) forward log-weight and pred_{t+1}(j) = logsumexp_i
-    # [ f_t(i) + log T(set_i -> set_j) ] is the one-step predictive at the visited set j.
-    smooth_logw: list[np.ndarray] = [np.zeros(0) for _ in range(T)]
-    f_last = fwd_logw[T - 1] - logsumexp(fwd_logw[T - 1])
-    smooth_logw[T - 1] = f_last
-    for t in range(T - 2, -1, -1):
-        sets_t = fwd_sets[t]
-        sets_n = fwd_sets[t + 1]
-        f_t = fwd_logw[t] - logsumexp(fwd_logw[t])  # normalized forward at t
-        # Transition log-matrix between the (small) visited supports of t and t+1.
-        log_T = np.empty((sets_t.shape[0], sets_n.shape[0]))
-        for i in range(sets_t.shape[0]):
-            for j in range(sets_n.shape[0]):
-                log_T[i, j] = _log_dwell_pair(sets_n[j], sets_t[i], p_stay, n_subsets)
-        # Predictive at each next-set j: logsumexp_i (f_t(i) + log T(i->j)).
-        pred_n = logsumexp(f_t[:, None] + log_T, axis=0)  # (U_{t+1},)
-        s_next = smooth_logw[t + 1]
-        ratio = s_next - pred_n  # safe: every visited set has nonzero predictive mass
-        # s_t(i) = f_t(i) + logsumexp_j (log T(i->j) + ratio(j)).
-        back = logsumexp(log_T + ratio[None, :], axis=1)  # (U_t,)
-        s_t = f_t + back
-        smooth_logw[t] = s_t - logsumexp(s_t)
-
-    # --- Rao-Blackwellized per-edge smoothing marginal. ---------------------------------
-    active_posterior = np.empty((T, E), dtype=float)
-    for t in range(T):
-        w = np.exp(smooth_logw[t] - logsumexp(smooth_logw[t]))  # (U_t,)
-        active_posterior[t] = w @ fwd_sets[t].astype(float)
+    model = _markovlib.StateSpaceModel(
+        sample_prior=sample_prior, propagate=propagate, log_likelihood=log_likelihood
+    )
+    active_posterior = _markovlib.particle_smooth(
+        model, evidence, log_transition, n_particles=n_particles, seed=int(seed)
+    )
     active_posterior = np.clip(active_posterior, 0.0, 1.0)
 
     map_sets: list[frozenset[int]] = [
