@@ -46,6 +46,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Protocol
 
+import markovlib as _markovlib
 import numpy as np
 
 from . import geometry, hmm, structure_inference
@@ -187,18 +188,12 @@ def _enumerate_subsets(num_edges: int) -> list[tuple[int, ...]]:
 
 
 def _subset_active_mask(num_edges: int) -> np.ndarray:
-    """``(n_subsets, E)`` boolean matrix: row ``k`` is the membership of subset ``k``.
+    """``(2**E, E)`` factor membership (int ``{0, 1}``); ``[k, e] == 1`` iff edge ``e`` is in subset ``k``.
 
-    ``mask[k, e]`` is ``True`` iff edge ``e`` is active in subset ``k``. This is the
-    bridge between the subset-state alphabet of the joint HMM and the per-edge marginals.
+    The hand-rolled bitmask logic now lives in :func:`markovlib.product_membership` (the library's
+    factored/product-alphabet support); this is the graph layer's thin adapter over it.
     """
-    n_subsets = 1 << num_edges
-    mask = np.zeros((n_subsets, num_edges), dtype=bool)
-    for k in range(n_subsets):
-        for e in range(num_edges):
-            if (k >> e) & 1:
-                mask[k, e] = True
-    return mask
+    return _markovlib.product_membership(num_edges, 2)
 
 
 # --------------------------------------------------------------------------------------
@@ -240,31 +235,17 @@ def _per_edge_log_evidence(
 
 
 def _subset_log_emission(
-    log_active: np.ndarray,
-    log_inactive: np.ndarray,
-    active_mask: np.ndarray,
+    log_active: np.ndarray, log_inactive: np.ndarray, active_mask: np.ndarray
 ) -> np.ndarray:
-    """``(T, n_subsets)`` joint log-emission from the per-edge active/inactive evidence.
+    """``(T, 2**E)`` joint log-emission: per-subset sum of per-edge active/inactive evidence.
 
-    For subset ``k`` (membership ``active_mask[k]``) and frame ``t``:
-
-        log_emission[t, k] = sum_e ( log_active[t, e]   if e in k
-                                     else log_inactive[t, e] ).
-
-    Vectorized: select per-edge active or inactive evidence by the subset membership and
-    sum over edges. THEORY.md s.8/s.4 — edges observe disjoint body-pairs, so their
-    evidence is conditionally independent given the active set, hence the per-edge sum.
+    Edges observe disjoint body-pairs, so their evidence is conditionally independent given the active
+    set (THEORY.md s.4/s.8) -- the per-subset sum. The construction now lives in
+    :func:`markovlib.product_log_emission`; here we stack the per-edge evidence as ``(T, E, 2)``
+    (``[..., 0]`` inactive, ``[..., 1]`` active) and delegate.
     """
-    # log_active/log_inactive: (T, E). active_mask: (n_subsets, E).
-    # Broadcast to (T, n_subsets, E): where the edge is active in the subset use
-    # log_active, else log_inactive; then sum over the edge axis.
-    T = log_active.shape[0]
-    n_subsets, E = active_mask.shape
-    la = log_active[:, None, :]        # (T, 1, E)
-    li = log_inactive[:, None, :]      # (T, 1, E)
-    m = active_mask[None, :, :]        # (1, n_subsets, E)
-    per_edge = np.where(m, la, li)     # (T, n_subsets, E)
-    return per_edge.sum(axis=2)        # (T, n_subsets)
+    log_evidence = np.stack([log_inactive, log_active], axis=2)
+    return _markovlib.product_log_emission(log_evidence, active_mask)
 
 
 # --------------------------------------------------------------------------------------
