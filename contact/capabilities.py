@@ -36,6 +36,7 @@ thin, side-effect-free registry over the existing factors.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -47,6 +48,7 @@ from .model import ContactDetector
 from .types import (
     IMPACT,
     ContactGeometry,
+    ContactObservations,
     DetectionResult,
     PoseTrajectory,
     SupportSurface,
@@ -162,6 +164,20 @@ def _is_field_default(f: "dataclasses.Field", value: object) -> bool:
 # --------------------------------------------------------------------------------------
 
 
+#: shape id -> a resolver factory ``(caps, surface, contact_point_local) -> ContactGeometry``. Adding
+#: a shape is one entry here -- the same registry pattern as ``emissions.MODES``. A shape absent from
+#: the registry (or ``shape=None``) degrades to ``None`` => ``observe`` uses the byte-identical FlatRegion.
+SHAPE_RESOLVERS: dict[str, Callable[[Capabilities, SupportSurface, np.ndarray], ContactGeometry]] = {
+    "sphere_plane": lambda caps, surface, cpl: SpherePlane(caps.params["r_moving"], surface, cpl),
+    "sphere_sphere": lambda caps, surface, cpl: SphereSphere(caps.params["r_moving"], caps.params["r_support"]),
+    "box_plane": lambda caps, surface, cpl: BoxPlane(np.asarray(caps.params["half_extents"]), surface),
+    "mesh_plane": lambda caps, surface, cpl: MeshPlane(np.asarray(caps.params["vertices"]), surface, cpl),
+    "mesh_mesh": lambda caps, surface, cpl: MeshConvex(
+        np.asarray(caps.params["vertices_moving"]), np.asarray(caps.params["vertices_support"])
+    ),
+}
+
+
 def _resolve_geometry(
     caps: Capabilities,
     surface: SupportSurface,
@@ -192,27 +208,12 @@ def _resolve_geometry(
       never make the estimate *worse* than today's flat-plane baseline (DESIGN.md PART I
       section 7 / s.11 "unsupported pairs fall back to FlatRegion").
     """
-    shape = caps.shape
-    if shape is None:
+    make = SHAPE_RESOLVERS.get(caps.shape)  # None for shape=None or an UNRECOGNIZED shape
+    if make is None:
+        # Degrade to the FlatRegion floor (documented no-worse-than-today fallback):
+        # `observe(geometry=None)` reproduces the bit-identical baseline.
         return None
-    if shape == "sphere_plane":
-        return SpherePlane(caps.params["r_moving"], surface, contact_point_local)
-    if shape == "sphere_sphere":
-        return SphereSphere(caps.params["r_moving"], caps.params["r_support"])
-    if shape == "box_plane":
-        return BoxPlane(np.asarray(caps.params["half_extents"]), surface)
-    if shape == "mesh_plane":
-        return MeshPlane(
-            np.asarray(caps.params["vertices"]), surface, contact_point_local
-        )
-    if shape == "mesh_mesh":
-        return MeshConvex(
-            np.asarray(caps.params["vertices_moving"]),
-            np.asarray(caps.params["vertices_support"]),
-        )
-    # Unrecognized shape: fall back to the FlatRegion floor (clear, documented no-worse-than-
-    # today degrade). `observe(geometry=None)` reproduces the bit-identical baseline.
-    return None
+    return make(caps, surface, contact_point_local)
 
 
 # --------------------------------------------------------------------------------------
@@ -220,6 +221,42 @@ def _resolve_geometry(
 # A thin selector ON TOP of the existing `observe` + `ContactDetector.detect`; with
 # `Capabilities()` it is byte-identical to today's pipeline.
 # --------------------------------------------------------------------------------------
+
+
+def _force_none(obs, truth_force):
+    return obs  # no factor -> the byte-identical kinematics-only behaviour.
+
+
+def _force_measured(obs, truth_force):
+    if truth_force is None:
+        raise ValueError(
+            "Capabilities(force='measured') needs a caller-supplied `truth_force` sensor stream "
+            "(T,), but got None. Pass the measured normal force, or declare force='none' to run "
+            "kinematics-only."
+        )
+    return dataclasses.replace(obs, normal_force=np.asarray(truth_force, dtype=float))
+
+
+def _force_inferred(obs, truth_force):
+    raise NotImplementedError(
+        "Capabilities(force='inferred') is unsupported by the bare-pair detect_pair API. Inferred "
+        "force is a WHOLE-BODY quantity: it is recovered at the scene/body level from the body's "
+        "mass/inertia and the scenario-level raw candidate points/normals/gaps via "
+        "`contact.dynamics_id.infer_normal_force(raw, config)`, which requires a RawScenario "
+        "(inertials + candidates) that the bare (moving, support, surface, contact_point_local) pair "
+        "does not carry. Either use force='measured' with a supplied sensor stream, or run the "
+        "inferred-force virtual sensor at the scene/body level (DESIGN.md PART II.B / III.4) and pass "
+        "its (T,) output in here as the measured stream."
+    )
+
+
+#: force mode -> a preparer returning the (possibly force-augmented) observations, or raising.
+#: The same registry pattern as SHAPE_RESOLVERS / emissions.MODES; a new force mode is one entry.
+FORCE_PREPARERS: dict[str, Callable[[ContactObservations, np.ndarray | None], ContactObservations]] = {
+    "none": _force_none,
+    "measured": _force_measured,
+    "inferred": _force_inferred,
+}
 
 
 def detect_pair(
@@ -290,35 +327,12 @@ def detect_pair(
     )
 
     # (3a) Force channel: the gated optional observation (DESIGN.md PART I section 6 / II.A).
-    if caps.force == "none":
-        pass  # no factor -> the byte-identical kinematics-only behaviour.
-    elif caps.force == "measured":
-        if truth_force is None:
-            raise ValueError(
-                "Capabilities(force='measured') needs a caller-supplied `truth_force` "
-                "sensor stream (T,), but got None. Pass the measured normal force, or "
-                "declare force='none' to run kinematics-only."
-            )
-        obs = dataclasses.replace(
-            obs, normal_force=np.asarray(truth_force, dtype=float)
-        )
-    elif caps.force == "inferred":
-        raise NotImplementedError(
-            "Capabilities(force='inferred') is unsupported by the bare-pair detect_pair "
-            "API. Inferred force is a WHOLE-BODY quantity: it is recovered at the "
-            "scene/body level from the body's mass/inertia and the scenario-level raw "
-            "candidate points/normals/gaps via "
-            "`contact.dynamics_id.infer_normal_force(raw, config)`, which requires a "
-            "RawScenario (inertials + candidates) that the bare (moving, support, surface, "
-            "contact_point_local) pair does not carry. Either use force='measured' with a "
-            "supplied sensor stream, or run the inferred-force virtual sensor at the "
-            "scene/body level (DESIGN.md PART II.B / III.4) and pass its (T,) output in "
-            "here as the measured stream."
-        )
-    else:
+    prepare = FORCE_PREPARERS.get(caps.force)
+    if prepare is None:
         raise ValueError(
             f"unknown force mode {caps.force!r}; expected 'none', 'measured', or 'inferred'."
         )
+    obs = prepare(obs, truth_force)
 
     # (3b) Material / measurement-covariance: apply to a CONFIG COPY (never mutate the
     # caller's config). `dataclasses.replace` shares the untouched sub-configs by reference;
