@@ -29,23 +29,32 @@ locked to one playhead.
 > so force-mediated contacts like a Newton's-cradle clack light up). The full `media/` gallery is
 > fully regeneratable and git-ignored; these GIFs in [`assets/`](assets/) are the lightweight preview.
 
-Three things live here:
+Four things live here, and they read in this order:
 
 - **[THEORY.md](THEORY.md)** — the theory built from the ground up. It starts from the
   naive "close and not moving" detector and, by repeatedly finding the exact case that
   breaks the current idea, derives the full object: a probabilistic hybrid dynamical
   system inferred as a Bayesian posterior over active-constraint structures. Read this
-  first; the code cites its section numbers throughout.
+  first; the code cites its section numbers throughout. (A gentler long-form telling of
+  the same construction: [docs/theory-long.md](docs/theory-long.md).)
 - **[DESIGN.md](DESIGN.md)** — the engineering path that *generalizes* the estimator beyond
   the validated "known point on a flat, non-rotating floor" regime into a **capability-driven**
   estimator: one inference fed by whatever the user can provide (shape, force, material…),
   each capability an optional, gated factor that sharpens the posterior and degrades
-  gracefully when absent. It records the build (Phases 0–5) and the per-fix evidence.
-- **The [`contact/`](contact/) package** — the implementation of both, validated against
-  physics ground truth from MuJoCo.
+  gracefully when absent. (The phased build record + evidence:
+  [docs/design-history.md](docs/design-history.md).)
+- **The [`contact/`](contact/) package** — the estimator itself: noisy poses in,
+  calibrated contact posteriors out. Pure numpy/scipy (+ the vendored
+  [`markovlib`](markovlib/) engines); it never sees ground truth.
+- **The [`oracle/`](oracle/) package** — the experimenter's side: MuJoCo truth factories
+  for every scenario/scene, scoring, expectation checks, and the synced videos. It imports
+  `contact`; `contact` can never import it — the withheld-truth protocol as a package
+  boundary.
 
 The original single-file toy ([rung0/](rung0/)) is kept as "rung 0" — the rudimentary
-chi-squared detector the theory critiques and supersedes.
+chi-squared detector the theory critiques and supersedes. (An earlier single-file literate
+telling of the whole method, retired when the repository itself became the readable
+artifact, is preserved at the `standalone-final` tag.)
 
 ## The model in one breath
 
@@ -238,7 +247,7 @@ uv run python viz.py bouncing_ball --events         # one zoomed slow-mo clip pe
 ## Validation
 
 ```bash
-uv run pytest                       # unit + integration + expectation asserts
+uv run pytest                       # unit + integration + expectation + invariant asserts
 uv run python verify_demos.py       # the expectation report (PASS / WARN / FAIL per demo)
 ```
 
@@ -300,7 +309,7 @@ relative velocity, sharp force pulse). Try it: `uv run python viz.py newtons_cra
 it together — declare what you have, get the richest estimator; ask what to provide next:
 
 ```python
-from contact.capabilities import Capabilities, detect_pair, value_of_information
+from contact import Capabilities, detect_pair, value_of_information
 
 # Declare available capabilities; the richest resolver + factors are selected automatically.
 caps = Capabilities(shape="sphere_sphere", params={"r_moving": 0.05, "r_support": 0.05})

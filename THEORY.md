@@ -1,6 +1,9 @@
 # Contact detection from first principles
 
-This document builds the whole theory of contact detection from the ground up.
+This document builds the whole theory of contact detection from the ground up. (It is
+the terse, canonical spine — the code cites its §-numbers throughout. A long-form
+telling of the same construction, gentler and fully worked, lives in
+[`docs/theory-long.md`](docs/theory-long.md).)
 The method is deliberately Socratic: at each step we state the simplest idea that
 could work, find the precise situation where it breaks, and let that failure
 *derive* the next idea. Nothing is introduced because it is fashionable; every

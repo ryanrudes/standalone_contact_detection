@@ -1,6 +1,11 @@
 # Contact detection from first principles  
 ## A rigorous but approachable construction
 
+> The long-form telling: the same derivation as [`THEORY.md`](../THEORY.md), built slowly,
+> with every step motivated and worked. **THEORY.md is canonical** — its §-numbers are what
+> the code cites — and where the two disagree, THEORY.md wins. Read this version when you
+> want the gentle on-ramp; read THEORY.md when you want the spine.
+
 This document builds the theory of contact detection from the ground up.
 
 The guiding method is simple:
