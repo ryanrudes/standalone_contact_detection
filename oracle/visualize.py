@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import mujoco_gen
-from .config import DetectorConfig
-from .geometry import observe
-from .graph import detect_scene
-from .model import ContactDetector
-from .types import (
+from contact import mujoco_gen  # moves into oracle/ next
+from contact.config import DetectorConfig
+from contact.geometry import observe
+from contact.graph import detect_scene
+from contact.model import ContactDetector
+from contact.types import (
     FREE,
     IMPACT,
     PIVOTING,

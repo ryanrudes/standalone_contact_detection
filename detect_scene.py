@@ -7,7 +7,7 @@ rung 5 of the pragmatic ladder (THEORY.md s.10): it takes one of the multi-body 
 (``contact.graph.detect_scene``) over its candidate edges, and reports
 
   * per edge: the detected contact intervals + dominant twist-subspace mode (s.3), scored
-    against that edge's withheld ground truth (``contact.report.score`` per edge, s.9);
+    against that edge's withheld ground truth (``oracle.report.score`` per edge, s.9);
   * the joint MAP active-set timeline (which edges are simultaneously active over time,
     s.8) against the ground-truth active set;
 
@@ -39,7 +39,7 @@ import numpy as np
 from contact import geometry, mujoco_gen
 from contact.config import DetectorConfig
 from contact.graph import _resolve_support, build_candidate_edges, detect_scene
-from contact.report import plot_graph, print_graph_report
+from oracle.report import plot_graph, print_graph_report
 from contact.types import MultiBodyScene
 
 #: Where the contact-graph figure is written (repo root), mirroring the single-pair PNG.

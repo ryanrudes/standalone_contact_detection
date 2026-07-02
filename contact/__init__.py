@@ -113,9 +113,6 @@ from .structure_inference import (
 )
 from .uncertainty import emission_tempering
 
-# Synced real-time side-by-side animations (scene + signals + detections).
-from .visualize import animate_scene, animate_scenario
-
 # The MuJoCo truth factory (THEORY.md s.9). Imported lazily-friendly but eager here:
 # `mujoco` is a declared dependency, and the top-level convenience API exposes the
 # generator alongside the detector. `generate`/`SCENARIOS` are the single-pair scenarios;
@@ -163,8 +160,6 @@ __all__ = [
     "detect_scene",
     "generate_scene",
     "SCENES",
-    "animate_scenario",
-    "animate_scene",
     # s.5-s.7 leaf entrypoints
     "detect_impacts",
     "friction_stick_slip",

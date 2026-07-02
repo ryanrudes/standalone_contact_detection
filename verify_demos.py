@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from contact import mujoco_gen
-from contact.verification import (
+from oracle.verification import (
     SCENARIO_EXPECT,
     SCENE_EXPECT,
     verify_scenario,

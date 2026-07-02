@@ -239,7 +239,8 @@ def _synthetic_obs(T: int = 200, fps: float = 200.0) -> ContactObservations:
 
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen, report  # noqa: E402  (after the importorskip)
+from contact import geometry, mujoco_gen  # noqa: E402  (after the importorskip)
+from oracle import report  # noqa: E402
 
 
 def _drop_rest_obs() -> ContactObservations:

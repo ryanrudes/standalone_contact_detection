@@ -43,7 +43,8 @@ if str(_REPO_ROOT) not in sys.path:
 # detector core does not itself depend on it).
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen, report
+from contact import geometry, mujoco_gen
+from oracle import report
 from contact.model import ContactDetector
 from contact.types import ROLLING, SLIDING, STATIC
 

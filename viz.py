@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from contact import mujoco_gen
 from contact.config import DetectorConfig
-from contact.visualize import animate_scene, animate_scenario
+from oracle.visualize import animate_scene, animate_scenario
 
 
 def main() -> None:
@@ -58,7 +58,7 @@ def main() -> None:
     cfg = config if args.stiffness is not None else None
 
     if args.pairs:
-        from contact.visualize import animate_pairs
+        from oracle.visualize import animate_pairs
         paths = animate_pairs(args.name, seed=args.seed, hz=args.hz, config=cfg, use_force=args.force)
         print("Wrote per-pair contact videos" + (" (force channel on)" if args.force else "") + ":")
         for p in paths:
@@ -66,7 +66,7 @@ def main() -> None:
         return
 
     if args.events:
-        from contact.visualize import animate_event_clips
+        from oracle.visualize import animate_event_clips
         paths = animate_event_clips(args.name, outdir="media/events", seed=args.seed, hz=args.hz, config=cfg)
         print("Wrote event clips:")
         for p in paths:

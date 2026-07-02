@@ -27,7 +27,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["contact"]
+packages = ["contact", "oracle"]
 
 # The vendored general Markov-process library (markovlib/) — published on PyPI as `marmo`, imported
 # as `markovlib`; the contact engines delegate to it. Consumed as an editable path dependency.

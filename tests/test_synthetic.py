@@ -23,7 +23,7 @@ def test_recovers_the_canonical_story():
     raw = synthetic_drop_rest_liftoff()
     _, result = _detect(raw)
 
-    from contact.report import score
+    from oracle.report import score
 
     sc = score(result, raw.truth)
     assert sc["contact_iou"] > 0.9, sc

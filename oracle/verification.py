@@ -18,11 +18,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import mujoco_gen
-from .geometry import observe
-from .model import ContactDetector
-from .graph import detect_scene
-from .types import FREE
+from contact import mujoco_gen  # moves into oracle/ next
+from contact.geometry import observe
+from contact.model import ContactDetector
+from contact.graph import detect_scene
+from contact.types import FREE
 
 
 # --------------------------------------------------------------------------------------

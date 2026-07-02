@@ -66,7 +66,8 @@ if str(_REPO_ROOT) not in sys.path:
 # The simulator is the only hard external dependency of this suite; skip cleanly if absent.
 mujoco = pytest.importorskip("mujoco")
 
-from contact import graph, mujoco_gen, report
+from contact import graph, mujoco_gen
+from oracle import report
 from contact.config import DetectorConfig
 from contact.types import FREE, ROLLING, SLIDING, STATIC
 

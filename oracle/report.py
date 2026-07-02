@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .types import (
+from contact.types import (
     FREE,
     DetectionResult,
     GraphDetectionResult,

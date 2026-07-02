@@ -35,7 +35,7 @@ from contact import (
     generate,
     observe,
 )
-from contact import report
+from oracle import report
 
 #: Where the diagnostic figure is written (unless --no-plot): next to this script, like
 #: detect_scene.py's default (the .png is git-ignored).
