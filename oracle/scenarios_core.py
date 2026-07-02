@@ -20,6 +20,7 @@ import mujoco
 
 from oracle._mjcf import obj_id as _id, options as _common_options
 from oracle.registry import scenario
+from oracle.specs import ScenarioSpec
 
 
 # --------------------------------------------------------------------------------------
@@ -92,20 +93,20 @@ def _build_drop_rest() -> tuple[mujoco.MjModel, dict]:
 </mujoco>
 """
     model = mujoco.MjModel.from_xml_string(xml)
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
-        "duration": 1.5,
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
+        duration=1.5,
         # Candidate contact corners for contact-implicit inverse dynamics (THEORY.md s.8).
-        "box_corners_local": _BOX_BOTTOM_CORNERS_LOCAL,
-    }
-    return model, build
+        box_corners_local=_BOX_BOTTOM_CORNERS_LOCAL,
+    )
 
 
 @scenario("drop_rest_liftoff")
@@ -142,20 +143,20 @@ def _build_drop_rest_liftoff() -> tuple[mujoco.MjModel, dict]:
         if d.time > 0.9:
             d.xfrc_applied[box_id, 2] = 1.8 * weight
 
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
-        "duration": 1.6,
-        "forcing": forcing,
-        "box_corners_local": _BOX_BOTTOM_CORNERS_LOCAL,
-    }
-    return model, build
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
+        duration=1.6,
+        forcing=forcing,
+        box_corners_local=_BOX_BOTTOM_CORNERS_LOCAL,
+    )
 
 
 @scenario("push_to_slide")
@@ -196,22 +197,22 @@ def _build_push_to_slide() -> tuple[mujoco.MjModel, dict]:
             ramp = 1.5 * weight * (d.time - 0.3)
             d.xfrc_applied[box_id, 0] = min(ramp, 0.58 * weight)
 
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
         # Keep the window short enough to stay in the clean static->sliding regime
         # before the box reaches a high enough speed to skip on the soft-constraint plane.
-        "duration": 1.0,
-        "forcing": forcing,
-        "box_corners_local": _BOX_BOTTOM_CORNERS_LOCAL,
-    }
-    return model, build
+        duration=1.0,
+        forcing=forcing,
+        box_corners_local=_BOX_BOTTOM_CORNERS_LOCAL,
+    )
 
 
 @scenario("rolling_ball")
@@ -254,11 +255,12 @@ def _build_rolling_ball() -> tuple[mujoco.MjModel, dict]:
         d.qvel[jadr + 0] = v       # linear x (world): v_com = +w*R toward +x
         d.qvel[jadr + 4] = +w      # angular y (about +y -> rolls toward +x without slip)
 
-    build = {
-        "moving_body": "ball",
-        "moving_geom": "ballg",
-        "support_body": "world",
-        "support_geom": "floor",
+    return ScenarioSpec(
+        model=model,
+        moving_body="ball",
+        moving_geom="ballg",
+        support_body="world",
+        support_geom="floor",
         # Sphere "material point" tracked is the center; the radius is the gap/offset
         # handled by the surface. We raise the (observation-side) plane by one radius so
         # the tracked CENTER's signed distance to it reads ~0 at contact, just like a
@@ -266,14 +268,13 @@ def _build_rolling_ball() -> tuple[mujoco.MjModel, dict]:
         # exactly as documented for the sphere (THEORY.md s.3 note on tracking a single
         # material point). It changes only the OBSERVABLE gap; the MuJoCo truth labels
         # come from the geom-level contact and are unaffected.
-        "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, 0.0]),
-        "shape": "sphere",
-        "duration": 1.0,
-        "init": init,
-    }
-    return model, build
+        surface_point_local=np.array([0.0, 0.0, _BALL_R]),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, 0.0]),
+        shape="sphere",
+        duration=1.0,
+        init=init,
+    )
 
 
 @scenario("bouncing_ball")
@@ -300,21 +301,21 @@ def _build_bouncing_ball() -> tuple[mujoco.MjModel, dict]:
 </mujoco>
 """
     model = mujoco.MjModel.from_xml_string(xml)
-    build = {
-        "moving_body": "ball",
-        "moving_geom": "ballg",
-        "support_body": "world",
-        "support_geom": "floor",
+    return ScenarioSpec(
+        model=model,
+        moving_body="ball",
+        moving_geom="ballg",
+        support_body="world",
+        support_geom="floor",
         # Raise the observation-side plane by one radius so the tracked sphere CENTER's
         # signed distance reads ~0 at contact (see _build_rolling_ball for the rationale);
         # truth labels are geom-based and unaffected.
-        "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, 0.0]),
-        "shape": "sphere",
-        "duration": 2.5,
-    }
-    return model, build
+        surface_point_local=np.array([0.0, 0.0, _BALL_R]),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, 0.0]),
+        shape="sphere",
+        duration=2.5,
+    )
 
 
 @scenario("moving_support")
@@ -365,23 +366,23 @@ def _build_moving_support() -> tuple[mujoco.MjModel, dict]:
         else:
             d.ctrl[0] = min(1.5, 0.8 * (d.time - 0.3))
 
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "cart",
-        "support_geom": "cartg",
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="cart",
+        support_geom="cartg",
         # Surface in the CART's local frame: the deck top face.
-        "surface_point_local": np.array([0.0, 0.0, deck_top]),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
-        "duration": 2.0,
-        "forcing": forcing,
+        surface_point_local=np.array([0.0, 0.0, deck_top]),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
+        duration=2.0,
+        forcing=forcing,
         # The deck is the (moving) support; the box's four bottom corners are the
         # candidates. Gaps/forces are computed support-relative against the deck top.
-        "box_corners_local": _BOX_BOTTOM_CORNERS_LOCAL,
-    }
-    return model, build
+        box_corners_local=_BOX_BOTTOM_CORNERS_LOCAL,
+    )
 
 
 # Local corner positions of the rig box's bottom face, in the box body frame. These are
@@ -440,25 +441,24 @@ def _build_indeterminate_rig() -> tuple[mujoco.MjModel, dict]:
 </mujoco>
 """
     model = mujoco.MjModel.from_xml_string(xml)
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
         # Tracked center-of-bottom-face point, as for the other resting box scenarios.
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
         # Long enough to drop, dissipate the touchdown transient, and settle into a quiet
         # static multi-contact equilibrium before we read off the per-corner truth.
-        "duration": 4.0,
+        duration=4.0,
         # Marks this builder so `generate` knows to harvest the K-corner contact_points.
-        "is_indeterminate_rig": True,
-        "corners_local": _RIG_CORNERS_LOCAL,
+        rig_corners_local=_RIG_CORNERS_LOCAL,
         # Also expose the unified inverse-dynamics candidate view (signed gap + per-corner
         # force + active flags) consistent with the new schema; these are the same K=4
         # corners, so meta["candidates"] aliases meta["contact_points"] downstream (s.8).
-        "box_corners_local": _RIG_CORNERS_LOCAL,
-    }
-    return model, build
+        box_corners_local=_RIG_CORNERS_LOCAL,
+    )

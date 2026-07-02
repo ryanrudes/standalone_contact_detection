@@ -29,6 +29,7 @@ import mujoco
 from ._mjcf import body_id as _bid, options as _common_options
 
 from oracle.registry import scene
+from oracle.specs import EdgeSpec, SceneSpec
 
 # Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
 # leaf the builders below self-register into — all cycle-free.
@@ -96,55 +97,55 @@ def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
     model = mujoco.MjModel.from_xml_string(xml)
 
     n_up = np.array([0.0, 0.0, 1.0])
-    build = {
-        "bodies": ["box1", "box2", "box3"],
+    return SceneSpec(
+        model=model,
+        bodies=("box1", "box2", "box3"),
         # Let the stack settle into a quiet equilibrium before recording (the clock is
         # reset to 0 after settle), so the recorded window is pure sustained STATIC.
-        "settle": 0.5,
-        "duration": 1.5,
-        "edges": [
-            {
-                "edge_id": "box1_floor",
-                "moving_body": "box1",
-                "support_body": "world",
-                "moving_geoms": ["box1g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),   # box1 bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box2_box1",
-                "moving_body": "box2",
-                "support_body": "box1",
-                "moving_geoms": ["box2g"],
-                "support_geoms": ["box1g"],
-                "surface_point_local": np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),   # box2 bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box3_box2",
-                "moving_body": "box3",
-                "support_body": "box2",
-                "moving_geoms": ["box3g"],
-                "support_geoms": ["box2g"],
-                "surface_point_local": np.array([0.0, 0.0, h]),    # box2 TOP face (box2-local)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),   # box3 bottom-face center
-                "shape": "box",
-            },
-        ],
-        "meta": {
+        settle=0.5,
+        duration=1.5,
+        edges=(
+            EdgeSpec(
+                edge_id="box1_floor",
+                moving_body="box1",
+                support_body="world",
+                moving_geoms=("box1g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),   # box1 bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box2_box1",
+                moving_body="box2",
+                support_body="box1",
+                moving_geoms=("box2g",),
+                support_geoms=("box1g",),
+                surface_point_local=np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),   # box2 bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box3_box2",
+                moving_body="box3",
+                support_body="box2",
+                moving_geoms=("box3g",),
+                support_geoms=("box2g",),
+                surface_point_local=np.array([0.0, 0.0, h]),    # box2 TOP face (box2-local)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),   # box3 bottom-face center
+                shape="box",
+            ),
+        ),
+        meta={
             "structure": (
                 "All three edges active simultaneously for the whole run: a stable "
                 "STATIC stack (THEORY.md s.8 -- a small fixed active set over the graph)."
             ),
         },
-    }
-    return model, build
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -231,55 +232,55 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
             d.xfrc_applied[box2_id, 0] = 0.8 * weight2
 
     n_up = np.array([0.0, 0.0, 1.0])
-    build = {
-        "bodies": ["box1", "box2"],
-        "settle": 0.4,
-        "duration": 2.0,
-        "forcing": forcing,
-        "edges": [
-            {
-                "edge_id": "box1_floor",
-                "moving_body": "box1",
-                "support_body": "world",
-                "moving_geoms": ["box1g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),
-                "shape": "box",
-            },
-            {
-                "edge_id": "box2_box1",
-                "moving_body": "box2",
-                "support_body": "box1",
-                "moving_geoms": ["box2g"],
-                "support_geoms": ["box1g"],
-                "surface_point_local": np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),  # slab bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box2_floor",
-                "moving_body": "box2",
-                "support_body": "world",
-                "moving_geoms": ["box2g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),  # slab bottom-face center
-                "shape": "box",
-            },
-        ],
-        "meta": {
+    return SceneSpec(
+        model=model,
+        bodies=("box1", "box2"),
+        settle=0.4,
+        duration=2.0,
+        forcing=forcing,
+        edges=(
+            EdgeSpec(
+                edge_id="box1_floor",
+                moving_body="box1",
+                support_body="world",
+                moving_geoms=("box1g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box2_box1",
+                moving_body="box2",
+                support_body="box1",
+                moving_geoms=("box2g",),
+                support_geoms=("box1g",),
+                surface_point_local=np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),  # slab bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box2_floor",
+                moving_body="box2",
+                support_body="world",
+                moving_geoms=("box2g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),  # slab bottom-face center
+                shape="box",
+            ),
+        ),
+        meta={
             "active_set_change": (
                 "{box1_floor, box2_box1} -> {box1_floor} (box2 airborne) -> "
                 "{box1_floor, box2_floor} (box2 lands, an impact). box1 stays put "
                 "(THEORY.md s.8 changing active set + s.6 impact)."
             ),
         },
-    }
-    return model, build
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -370,44 +371,44 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
             d.xfrc_applied[box_id, 0] = 0.8 * weight
 
     n_up = np.array([0.0, 0.0, 1.0])
-    build = {
-        "bodies": ["box", "table"],
-        "settle": 0.3,
-        "duration": 2.2,
-        "forcing": forcing,
-        "edges": [
-            {
-                "edge_id": "box_table",
-                "moving_body": "box",
-                "support_body": "table",
-                "moving_geoms": ["boxg"],
-                "support_geoms": ["tableg"],
+    return SceneSpec(
+        model=model,
+        bodies=("box", "table"),
+        settle=0.3,
+        duration=2.2,
+        forcing=forcing,
+        edges=(
+            EdgeSpec(
+                edge_id="box_table",
+                moving_body="box",
+                support_body="table",
+                moving_geoms=("boxg",),
+                support_geoms=("tableg",),
                 # Table TOP face, in the TABLE-local frame (origin at table center).
-                "surface_point_local": np.array([0.0, 0.0, table_half[2]]),
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),  # slab bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box_floor",
-                "moving_body": "box",
-                "support_body": "world",
-                "moving_geoms": ["boxg"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),   # slab bottom-face center
-                "shape": "box",
-            },
-        ],
-        "meta": {
+                surface_point_local=np.array([0.0, 0.0, table_half[2]]),
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),  # slab bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box_floor",
+                moving_body="box",
+                support_body="world",
+                moving_geoms=("boxg",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),   # slab bottom-face center
+                shape="box",
+            ),
+        ),
+        meta={
             "hand_off": (
                 "{box_table} -> {} (airborne) -> {box_floor}: a multi-surface hand-off "
                 "of the same body across an airborne gap (THEORY.md s.8). The table top "
                 "is 0.30 m up so the fall is long and the active-set change is decisive."
             ),
         },
-    }
-    return model, build
+    )
 
 

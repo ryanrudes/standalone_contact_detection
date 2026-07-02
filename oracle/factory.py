@@ -47,6 +47,7 @@ import mujoco
 
 from oracle._mjcf import obj_id as _id
 from oracle.registry import SCENARIO_BUILDERS, SCENE_BUILDERS
+from oracle.specs import ScenarioSpec, SceneSpec
 from contact.geometry import plane_gap, quat_to_matrix
 from contact.types import (
     FREE,
@@ -198,25 +199,26 @@ def _classify_mode(
     return STATIC
 
 
-def _simulate(model: mujoco.MjModel, build: dict, hz: float) -> dict:
+def _simulate(spec: ScenarioSpec, hz: float) -> dict:
     """Run the headless sim, subsampling to ``hz``, and return clean recorded arrays.
 
     Returns a dict of stacked per-recorded-frame arrays (no noise yet): times, moving &
     support poses, in_contact, mode, normal_force, penetration.
     """
+    model = spec.model
     data = mujoco.MjData(model)
 
-    moving_body = _id(model, mujoco.mjtObj.mjOBJ_BODY, build["moving_body"])
-    moving_geom = _id(model, mujoco.mjtObj.mjOBJ_GEOM, build["moving_geom"])
-    support_geom = _id(model, mujoco.mjtObj.mjOBJ_GEOM, build["support_geom"])
-    if build["support_body"] == "world":
+    moving_body = _id(model, mujoco.mjtObj.mjOBJ_BODY, spec.moving_body)
+    moving_geom = _id(model, mujoco.mjtObj.mjOBJ_GEOM, spec.moving_geom)
+    support_geom = _id(model, mujoco.mjtObj.mjOBJ_GEOM, spec.support_geom)
+    if spec.support_body == "world":
         support_body = 0  # MuJoCo's world body id is 0; its pose is identity for all t.
     else:
-        support_body = _id(model, mujoco.mjtObj.mjOBJ_BODY, build["support_body"])
+        support_body = _id(model, mujoco.mjtObj.mjOBJ_BODY, spec.support_body)
 
     # Optional one-time initialization (e.g. rolling-ball initial velocities).
-    init = build.get("init")
-    forcing = build.get("forcing")
+    init = spec.init
+    forcing = spec.forcing
 
     mujoco.mj_forward(model, data)
     if init is not None:
@@ -225,9 +227,9 @@ def _simulate(model: mujoco.MjModel, build: dict, hz: float) -> dict:
 
     dt = float(model.opt.timestep)
     sub = max(1, int(round((1.0 / hz) / dt)))  # physics substeps per recorded frame
-    n_frames = int(round(build["duration"] * hz))
+    n_frames = int(round(spec.duration * hz))
 
-    shape = build["shape"]
+    shape = spec.shape
 
     # --- multi-contact (indeterminate rig) per-corner harvesting setup (THEORY.md s.7) ---
     # When this scenario is the statically-indeterminate rig, we additionally record, for
@@ -236,8 +238,8 @@ def _simulate(model: mujoco.MjModel, build: dict, hz: float) -> dict:
     # the nearest listed corner (in the tangent plane). Defaults to 0 on frames where a
     # corner happens to carry no contact, so the arrays are always dense (K, T).
     rig_corners_local = (
-        np.asarray(build["corners_local"], dtype=float)
-        if build.get("is_indeterminate_rig")
+        np.asarray(spec.rig_corners_local, dtype=float)
+        if spec.rig_corners_local is not None
         else None
     )
     n_corners = 0 if rig_corners_local is None else int(rig_corners_local.shape[0])
@@ -254,13 +256,13 @@ def _simulate(model: mujoco.MjModel, build: dict, hz: float) -> dict:
     # the gap channel the detector itself sees (geometry.observe). The contact normal is the
     # plane outward normal carried into the box-local frame each frame (documented choice).
     box_corners_local = (
-        np.asarray(build["box_corners_local"], dtype=float)
-        if build.get("box_corners_local") is not None
+        np.asarray(spec.box_corners_local, dtype=float)
+        if spec.box_corners_local is not None
         else None
     )
     n_box_corners = 0 if box_corners_local is None else int(box_corners_local.shape[0])
-    surf_pt_local = np.asarray(build["surface_point_local"], dtype=float)
-    surf_n_local = np.asarray(build["surface_normal_local"], dtype=float)
+    surf_pt_local = np.asarray(spec.surface_point_local, dtype=float)
+    surf_n_local = np.asarray(spec.surface_normal_local, dtype=float)
     surf_n_local = surf_n_local / np.linalg.norm(surf_n_local)
     cand_gap: list[np.ndarray] = []     # per frame: (K,) SIGNED gap (m)
     cand_fn: list[np.ndarray] = []      # per frame: (K,) true normal force (N)
@@ -482,14 +484,14 @@ def generate(
     if name not in SCENARIO_BUILDERS:
         raise KeyError(f"unknown scenario {name!r}; available: {sorted(SCENARIO_BUILDERS)}")
 
-    model, build = SCENARIO_BUILDERS[name]()
+    spec = SCENARIO_BUILDERS[name]()
     # A builder may pin its own recording rate via build["record_hz"] (the recording-cadence
     # override): some impact-regime demos contain energetic, brief touchdowns that are
     # sub-frame at the default 100 Hz and only become observable -- the named IMPACT appearing
     # in the truth -- when sampled faster. This is per-scenario and never narrows the caller's
     # request (we take the MAX), so a caller asking for a higher hz still gets it.
-    rec_hz = max(float(hz), float(build.get("record_hz") or hz))
-    rec = _simulate(model, build, rec_hz)
+    rec_hz = max(float(hz), float(spec.record_hz or hz))
+    rec = _simulate(spec, rec_hz)
 
     # --- emulate mocap: additive Gaussian noise on the RECORDED moving positions only.
     # (THEORY.md s.4: we observe noisy marker positions; velocities come from
@@ -504,8 +506,8 @@ def generate(
         t=rec["t"], position=rec["sup_pos"], quat=rec["sup_quat"]
     )
     surface = SupportSurface(
-        point=np.asarray(build["surface_point_local"], dtype=float),
-        normal=np.asarray(build["surface_normal_local"], dtype=float),
+        point=np.asarray(spec.surface_point_local, dtype=float),
+        normal=np.asarray(spec.surface_normal_local, dtype=float),
     )
     truth = GroundTruth(
         t=rec["t"],
@@ -520,10 +522,10 @@ def generate(
         "seed": seed,
         "hz": rec_hz,
         "noise_m": noise_m,
-        "shape": build["shape"],
-        "timestep": float(model.opt.timestep),
-        "moving_body": build["moving_body"],
-        "support_body": build["support_body"],
+        "shape": spec.shape,
+        "timestep": float(spec.model.opt.timestep),
+        "moving_body": spec.moving_body,
+        "support_body": spec.support_body,
         "mode_thresholds": {
             "slip_eps": _SLIP_EPS,
             "spin_eps": _SPIN_EPS,
@@ -542,9 +544,9 @@ def generate(
     # candidate point-contacts (the box corners) so dynamics_id can recover the per-corner
     # forces under Newton-Euler + Signorini (s.2) + the friction cone (s.7) and compare to
     # the MuJoCo truth. Only emitted for the box-on-plane scenarios that carry corner data.
-    if build.get("box_corners_local") is not None:
-        moving_body_id = _id(model, mujoco.mjtObj.mjOBJ_BODY, build["moving_body"])
-        meta["inertial"] = _body_inertial(model, moving_body_id)
+    if spec.box_corners_local is not None:
+        moving_body_id = _id(spec.model, mujoco.mjtObj.mjOBJ_BODY, spec.moving_body)
+        meta["inertial"] = _body_inertial(spec.model, moving_body_id)
         meta["gravity"] = 9.81  # m/s^2 (matches `_common_options` gravity = -9.81 z)
         meta["candidates"] = {
             # K box-bottom corners in the box body-local frame -- the contact candidates.
@@ -565,7 +567,7 @@ def generate(
         }
 
     # --- statically-indeterminate rig: expose the per-corner observability arrays (s.7) ---
-    if build.get("is_indeterminate_rig"):
+    if spec.rig_corners_local is not None:
         pen_kt = rec["corner_penetration"]   # (K, T) penetration per corner per frame
         fn_kt = rec["corner_normal_force"]   # (K, T) normal force per corner per frame
         corners = rec["corners_local"]       # (K, 3) corner positions in box-local frame
@@ -603,33 +605,20 @@ def generate(
         )
 
     # --- optional per-scenario contact-geometry resolver (DESIGN.md III.1 / PHASE 2) ---
-    # A builder may attach a "geometry" spec; we construct the matching resolver against THIS
-    # scenario's `surface` so the plane lines up exactly. With no spec the resolver is None, so
-    # `observe` wraps `surface` + `contact_point_local` in a FlatRegion -- today's bit-identical
-    # path. Only the tumbling box ships a spec: a BoxPlane whose 8 corners give the migrating
-    # nearest-corner contact, so the per-bounce IMPACT fires (the fixed bottom-face point, ~225
-    # mm up when a corner strikes, never reads gap ~0 at the bounce).
-    raw_geometry = None
-    geom_spec = build.get("geometry")
-    if geom_spec is not None:
-        kind = geom_spec.get("kind")
-        if kind == "box_plane":
-            from contact.geometry_resolvers import BoxPlane
-
-            raw_geometry = BoxPlane(
-                np.asarray(geom_spec["half_extents"], dtype=float), surface
-            )
-        else:
-            raise ValueError(
-                f"unknown geometry spec kind {kind!r} in scenario {name!r}"
-            )
+    # A builder may attach a resolver factory; we call it with THIS scenario's `surface` so
+    # the plane lines up exactly. With none the resolver is None, so `observe` wraps
+    # `surface` + `contact_point_local` in a FlatRegion -- today's bit-identical path. Only
+    # the tumbling box ships one: a BoxPlane whose 8 corners give the migrating
+    # nearest-corner contact, so the per-bounce IMPACT fires (the fixed bottom-face point,
+    # ~225 mm up when a corner strikes, never reads gap ~0 at the bounce).
+    raw_geometry = spec.resolver(surface) if spec.resolver is not None else None
 
     return RawScenario(
         name=name,
         moving=moving,
         support=support,
         surface=surface,
-        contact_point_local=np.asarray(build["contact_point_local"], dtype=float),
+        contact_point_local=np.asarray(spec.contact_point_local, dtype=float),
         truth=truth,
         meta=meta,
         geometry=raw_geometry,
@@ -820,7 +809,7 @@ def _edge_frame_truth(
     return found, f_n, pen, (m_mode if found else FREE)
 
 
-def _simulate_scene(model: mujoco.MjModel, build: dict, hz: float) -> dict:
+def _simulate_scene(spec: SceneSpec, hz: float) -> dict:
     """Run the headless multi-body sim and return clean per-body poses + per-edge truth.
 
     Same simulate->record loop as `_simulate` (THEORY.md s.9), generalized to N bodies and
@@ -830,49 +819,50 @@ def _simulate_scene(model: mujoco.MjModel, build: dict, hz: float) -> dict:
     the skateboard its !actuated initial velocity after the bodies have seated), plus an
     optional per-substep ``forcing`` (used to lower a support).
     """
+    model = spec.model
     data = mujoco.MjData(model)
 
-    body_names = list(build["bodies"])
+    body_names = list(spec.bodies)
     body_ids = {n: _id(model, mujoco.mjtObj.mjOBJ_BODY, n) for n in body_names}
 
-    edges = build["edges"]
+    edges = spec.edges
     # Pre-resolve each edge's geom-id sets and support body id (world body id is 0, an
     # identity pose). The moving body is resolved PER CONTACT inside `_edge_frame_truth`
     # from the contacting geom, so a sub-body wheel's own spin is captured.
     edge_rt = []
     for e in edges:
         support_id = (
-            0 if e["support_body"] == "world"
-            else _id(model, mujoco.mjtObj.mjOBJ_BODY, e["support_body"])
+            0 if e.support_body == "world"
+            else _id(model, mujoco.mjtObj.mjOBJ_BODY, e.support_body)
         )
         # Optional: classify the truth MODE from a specific body's material point rather than
         # the contacting sub-body's (see _edge_frame_truth). Used by board_ground so the truth
         # mode (board-fixed point = sliding) matches what the detector observes.
-        mode_body = e.get("truth_mode_body")
+        mode_body = e.truth_mode_body
         mode_body_id = (
             None if mode_body is None
             else _id(model, mujoco.mjtObj.mjOBJ_BODY, mode_body)
         )
         edge_rt.append(
             {
-                "edge_id": e["edge_id"],
+                "edge_id": e.edge_id,
                 "support_id": support_id,
-                "moving_geoms": _geom_ids(model, e["moving_geoms"]),
-                "support_geoms": _geom_ids(model, e["support_geoms"]),
-                "shape": e["shape"],
+                "moving_geoms": _geom_ids(model, e.moving_geoms),
+                "support_geoms": _geom_ids(model, e.support_geoms),
+                "shape": e.shape,
                 "mode_body_id": mode_body_id,
             }
         )
 
-    forcing = build.get("forcing")
-    launch = build.get("launch")
-    settle = float(build.get("settle", 0.0))
+    forcing = spec.forcing
+    launch = spec.launch
+    settle = float(spec.settle)
 
     mujoco.mj_forward(model, data)
 
     dt = float(model.opt.timestep)
     sub = max(1, int(round((1.0 / hz) / dt)))  # physics substeps per recorded frame
-    n_frames = int(round(build["duration"] * hz))
+    n_frames = int(round(spec.duration * hz))
 
     # --- optional settle + one-shot launch (the skateboard's !actuated initial velocity) ---
     # Run the settle phase WITHOUT recording, then apply the launch impulse once, so the
@@ -892,10 +882,10 @@ def _simulate_scene(model: mujoco.MjModel, build: dict, hz: float) -> dict:
     t_rec: list[float] = []
     pos = {n: [] for n in body_names}
     quat = {n: [] for n in body_names}
-    e_contact = {e["edge_id"]: [] for e in edges}
-    e_force = {e["edge_id"]: [] for e in edges}
-    e_pen = {e["edge_id"]: [] for e in edges}
-    e_mode = {e["edge_id"]: [] for e in edges}
+    e_contact = {e.edge_id: [] for e in edges}
+    e_force = {e.edge_id: [] for e in edges}
+    e_pen = {e.edge_id: [] for e in edges}
+    e_mode = {e.edge_id: [] for e in edges}
 
     buf6 = np.zeros(6)
 
@@ -982,14 +972,14 @@ def generate_scene(
     if name not in SCENE_BUILDERS:
         raise KeyError(f"unknown scene {name!r}; available: {sorted(SCENE_BUILDERS)}")
 
-    model, build = SCENE_BUILDERS[name]()
+    spec = SCENE_BUILDERS[name]()
     # A scene builder may pin its own recording rate via build["record_hz"] (the
     # recording-cadence override, mirroring `generate`): chained-impact scenes contain brief
     # body-to-body strikes that are sub-frame at the default 100 Hz and only register as the
     # named IMPACT in the truth when sampled faster. Per-scene, and never narrows the caller's
     # request (we take the MAX).
-    rec_hz = max(float(hz), float(build.get("record_hz") or hz))
-    rec = _simulate_scene(model, build, rec_hz)
+    rec_hz = max(float(hz), float(spec.record_hz or hz))
+    rec = _simulate_scene(spec, rec_hz)
 
     rng = np.random.default_rng(seed)
     t = rec["t"]
@@ -1005,24 +995,24 @@ def generate_scene(
     # --- candidate edges + per-edge ground truth ---
     edges: list[ContactEdge] = []
     truth: dict[str, GroundTruth] = {}
-    for e in build["edges"]:
-        eid = e["edge_id"]
+    for e in spec.edges:
+        eid = e.edge_id
         edges.append(
             ContactEdge(
                 edge_id=eid,
-                moving_body=e["moving_body"],
-                support_body=e["support_body"],
+                moving_body=e.moving_body,
+                support_body=e.support_body,
                 surface=SupportSurface(
-                    point=np.asarray(e["surface_point_local"], dtype=float),
-                    normal=np.asarray(e["surface_normal_local"], dtype=float),
+                    point=np.asarray(e.surface_point_local, dtype=float),
+                    normal=np.asarray(e.surface_normal_local, dtype=float),
                 ),
-                contact_point_local=np.asarray(e["contact_point_local"], dtype=float),
+                contact_point_local=np.asarray(e.contact_point_local, dtype=float),
                 # Optional per-edge contact-geometry resolver (DESIGN.md III.1). Most edges
                 # leave this absent -> ContactEdge.geometry defaults to None -> observe() wraps
                 # surface + contact_point_local in a FlatRegion (today's bit-identical path).
                 # An edge may attach a higher-fidelity resolver (e.g. SphereSphere on a
                 # ball<->ball edge, DESIGN.md III.5 Phase 1) which observe() then uses instead.
-                geometry=e.get("geometry"),
+                geometry=e.geometry,
             )
         )
         truth[eid] = GroundTruth(
@@ -1038,9 +1028,9 @@ def generate_scene(
         "seed": seed,
         "hz": rec_hz,
         "noise_m": noise_m,
-        "timestep": float(model.opt.timestep),
-        "bodies": list(build["bodies"]),
-        "edge_ids": [e["edge_id"] for e in build["edges"]],
+        "timestep": float(spec.model.opt.timestep),
+        "bodies": list(spec.bodies),
+        "edge_ids": [e.edge_id for e in spec.edges],
         "mode_thresholds": {
             "slip_eps": _SLIP_EPS,
             "spin_eps": _SPIN_EPS,
@@ -1054,6 +1044,6 @@ def generate_scene(
             "identity pose (the s.1 degenerate static floor)."
         ),
     }
-    meta.update(build.get("meta", {}))
+    meta.update(spec.meta)
 
     return MultiBodyScene(name=name, bodies=bodies, edges=edges, truth=truth, meta=meta)

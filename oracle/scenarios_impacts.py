@@ -52,6 +52,7 @@ import mujoco
 from ._mjcf import free_dofadr as _free_dofadr, obj_id as _id, options as _common_options
 
 from oracle.registry import scenario
+from oracle.specs import ScenarioSpec
 
 # Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
 # leaf the builders below self-register into — all cycle-free.
@@ -96,18 +97,18 @@ def _build_hard_drop() -> tuple[mujoco.MjModel, dict]:
 </mujoco>
 """
     model = mujoco.MjModel.from_xml_string(xml)
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
-        "duration": 1.2,
-    }
-    return model, build
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
+        duration=1.2,
+    )
 
 
 @scenario("restitution_bounce")
@@ -154,25 +155,25 @@ def _build_restitution_bounce() -> tuple[mujoco.MjModel, dict]:
 </mujoco>
 """
     model = mujoco.MjModel.from_xml_string(xml)
-    build = {
-        "moving_body": "ball",
-        "moving_geom": "ballg",
-        "support_body": "world",
-        "support_geom": "floor",
+    return ScenarioSpec(
+        model=model,
+        moving_body="ball",
+        moving_geom="ballg",
+        support_body="world",
+        support_geom="floor",
         # Raise the observation-side plane by one radius so the tracked sphere CENTER's signed
         # distance reads ~0 at contact (the sphere convention: the surface absorbs the radius;
         # see scenarios_core's bouncing_ball). Truth labels are geom-based and unaffected.
-        "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, 0.0]),
-        "shape": "sphere",
-        "duration": 3.0,
+        surface_point_local=np.array([0.0, 0.0, _BALL_R]),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, 0.0]),
+        shape="sphere",
+        duration=3.0,
         # Sample fast enough that each of the first several distinct, energetic touchdowns is
         # caught at its normal closing speed (the decaying TRAIN); at the default 100 Hz they
         # are all sub-frame and only a single impact + Zeno chatter survives. See the docstring.
-        "record_hz": 250.0,
-    }
-    return model, build
+        record_hz=250.0,
+    )
 
 
 @scenario("angled_impact")
@@ -213,20 +214,20 @@ def _build_angled_impact() -> tuple[mujoco.MjModel, dict]:
         d.qvel[adr + 0] = 1.1    # +x linear (forward; survives the bounce). Kept modest so the
         d.qvel[adr + 2] = -3.0   # ball does not travel far -> the camera frames it tight and big.
 
-    build = {
-        "moving_body": "ball",
-        "moving_geom": "ballg",
-        "support_body": "world",
-        "support_geom": "floor",
+    return ScenarioSpec(
+        model=model,
+        moving_body="ball",
+        moving_geom="ballg",
+        support_body="world",
+        support_geom="floor",
         # Sphere convention: raise the observation plane by one radius (see restitution_bounce).
-        "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, 0.0]),
-        "shape": "sphere",
-        "duration": 1.1,         # shorter -> less travel -> the ball stays large in the frame
-        "init": init,
-    }
-    return model, build
+        surface_point_local=np.array([0.0, 0.0, _BALL_R]),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, 0.0]),
+        shape="sphere",
+        duration=1.1,         # shorter -> less travel -> the ball stays large in the frame
+        init=init,
+    )
 
 
 @scenario("drop_on_incline")
@@ -289,21 +290,21 @@ def _build_drop_on_incline() -> tuple[mujoco.MjModel, dict]:
 </mujoco>
 """
     model = mujoco.MjModel.from_xml_string(xml)
-    build = {
-        "moving_body": "ball",
-        "moving_geom": "ballg",
-        "support_body": "world",
-        "support_geom": "ramp",  # noqa: (duration shortened below to keep the ball framed large)
+    return ScenarioSpec(
+        model=model,
+        moving_body="ball",
+        moving_geom="ballg",
+        support_body="world",
+        support_geom="ramp",  # noqa: (duration shortened below to keep the ball framed large)
         # Surface point + TILTED normal in the support (world) frame -- the incline top face.
         # We push the observation plane out by one radius along the tilted normal so the
         # tracked sphere CENTER's signed distance reads ~0 at the strike (the sphere
         # convention, generalized to a non-vertical normal). Truth labels are geom-based.
-        "surface_point_local": top_world + n_world * _BALL_R,
-        "surface_normal_local": n_world,
-        "contact_point_local": np.array([0.0, 0.0, 0.0]),
-        "shape": "sphere",
-        "duration": 1.0,  # shorter roll-down -> tighter framing so the small ball reads clearly
-    }
-    return model, build
+        surface_point_local=top_world + n_world * _BALL_R,
+        surface_normal_local=n_world,
+        contact_point_local=np.array([0.0, 0.0, 0.0]),
+        shape="sphere",
+        duration=1.0,  # shorter roll-down -> tighter framing so the small ball reads clearly
+    )
 
 

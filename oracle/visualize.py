@@ -71,7 +71,7 @@ def _capture_xml(builder):
     """Run a registered scenario/scene builder, capturing the XML it compiles (so we can re-skin it).
 
     The builders compile via ``mujoco.MjModel.from_xml_string``; we briefly wrap it to grab
-    the XML. Returns (xml_or_None, build_dict). Pure capture — no model is kept."""
+    the XML. Returns (xml_or_None, spec). Pure capture — no model is kept."""
     import mujoco
 
     cap: dict = {}
@@ -83,7 +83,7 @@ def _capture_xml(builder):
 
     mujoco.MjModel.from_xml_string = grab
     try:
-        _, build = builder()
+        build = builder()
     finally:
         mujoco.MjModel.from_xml_string = orig
     return cap.get("xml"), build
@@ -197,7 +197,8 @@ def _scene_model(builder, width, height):
             return model, build, color_map
         except Exception:
             pass  # fall back to the plain model below
-    model, build = builder()
+    build = builder()
+    model = build.model
     model.vis.global_.offwidth = max(int(width), int(model.vis.global_.offwidth))
     model.vis.global_.offheight = max(int(height), int(model.vis.global_.offheight))
     model.vis.headlight.ambient[:] = [0.6, 0.6, 0.6]
@@ -290,7 +291,7 @@ def _lerp_angle(a0, a1, t):
 def _step_cadence(model, build, hz):
     dt = float(model.opt.timestep)
     sub = max(1, int(round((1.0 / hz) / dt)))
-    n_frames = int(round(build["duration"] * hz))
+    n_frames = int(round(build.duration * hz))
     return sub, n_frames
 
 
@@ -304,20 +305,20 @@ def _stepped_data(mujoco, model, build):
     """
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
-    forcing = build.get("forcing")
+    forcing = build.forcing
     dt = float(model.opt.timestep)
-    settle = float(build.get("settle", 0.0))
+    settle = float(getattr(build, "settle", 0.0))  # scenes only
     if settle > 0.0:
         for _ in range(int(round(settle / dt))):
             if forcing is not None:
                 forcing(model, data)
             mujoco.mj_step(model, data)
         data.time = 0.0  # match _simulate_scene: recorded window starts at t=0 after settle
-    init = build.get("init")
+    init = getattr(build, "init", None)  # scenarios only
     if init is not None:
         init(model, data)
         mujoco.mj_forward(model, data)
-    launch = build.get("launch")
+    launch = getattr(build, "launch", None)  # scenes only
     if launch is not None:
         launch(model, data)
         mujoco.mj_forward(model, data)
@@ -333,7 +334,7 @@ def _frame_trajectory(mujoco, model, build, hz):
     follows it, but obviously moves when the camera holds still and frames the whole path.
     """
     data = _stepped_data(mujoco, model, build)
-    forcing = build.get("forcing")
+    forcing = build.forcing
     sub, n_frames = _step_cadence(model, build, hz)
     pts = []
     for _ in range(n_frames):
@@ -365,7 +366,7 @@ def _render_run(builder, hz, width, height, distance, azimuth, elevation):
     cam = _camera(mujoco, lookat, distance or auto_distance, azimuth, elevation)
 
     data = _stepped_data(mujoco, model, build)
-    forcing = build.get("forcing")
+    forcing = build.forcing
     sub, n_frames = _step_cadence(model, build, hz)
     renderer = mujoco.Renderer(model, height, width)
     frames = []
@@ -596,8 +597,8 @@ def animate_scenario(name, out_path, seed=0, hz=100.0, fps=50, config=None,
     result = ContactDetector(config).detect(obs)
     # Scenarios may pin a faster recording rate too (e.g. restitution_bounce 250 Hz) -- render
     # at that SAME rate or the scene and the detection panels run at different speeds / lengths.
-    _, _b = registry.SCENARIO_BUILDERS[name]()
-    rate = max(float(hz), float(_b.get("record_hz") or hz))
+    _b = registry.SCENARIO_BUILDERS[name]()
+    rate = max(float(hz), float(_b.record_hz or hz))
     frames, color_map = render_scenario_frames(name, seed=seed, hz=rate, width=width, height=height, **cam)
     truth = raw.truth.in_contact
     return _build_animation(
@@ -626,13 +627,13 @@ def animate_scene(name, out_path, seed=0, hz=100.0, fps=50, config=None,
     scene = factory.generate_scene(name, seed=seed, hz=hz)
     config = _config_for_scene(scene, config)
     result = detect_scene(scene, config)
-    # Scenes may pin a faster recording rate (build["record_hz"]) to catch brief strikes, so
+    # Scenes may pin a faster recording rate (record_hz) to catch brief strikes, so
     # generate_scene records at max(hz, record_hz). Render at that SAME nominal rate (read from
     # the builder) or the scene frames and the detection panels run at different speeds and
     # drift apart. (Use the nominal rec_hz, not the median observed dt, so the physics-substep
     # rounding -- hence the exact frame count -- matches generate_scene's.)
-    _, _build = registry.SCENE_BUILDERS[name]()
-    rec_hz = max(float(hz), float(_build.get("record_hz") or hz))
+    _build = registry.SCENE_BUILDERS[name]()
+    rec_hz = max(float(hz), float(_build.record_hz or hz))
     frames, color_map = render_scene_frames(name, seed=seed, hz=rec_hz, width=width, height=height, **cam)
 
     # Use the first edge's signals for the scrolling traces; overlay all edges' posteriors.
@@ -699,7 +700,7 @@ def _render_window(builder, hz, width, height, lo, hi, lookat, distance, azimuth
     setup = _focus_setup(mujoco, model)
     _apply_focus(model, setup, focus_a, focus_b)
     data = _stepped_data(mujoco, model, build)
-    forcing = build.get("forcing")
+    forcing = build.forcing
     sub, n_frames = _step_cadence(model, build, hz)
     cam = _camera(mujoco, np.asarray(lookat, float), distance, azimuth, elevation)
     renderer = mujoco.Renderer(model, height, width)
@@ -727,8 +728,8 @@ def _gather_events(name, seed, hz, config):
         scene = factory.generate_scene(name, seed=seed, hz=hz)
         config = _config_for_scene(scene, config)
         gr = detect_scene(scene, config)
-        _, b = registry.SCENE_BUILDERS[name]()
-        rate = max(float(hz), float(b.get("record_hz") or hz))
+        b = registry.SCENE_BUILDERS[name]()
+        rate = max(float(hz), float(b.record_hz or hz))
         events = []
         for e in scene.edges:
             pe = gr.per_edge[e.edge_id]
@@ -757,9 +758,9 @@ def _gather_events(name, seed, hz, config):
     obs = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local, cfg.vel_smooth_time,
                   geometry=getattr(raw, "geometry", None))
     res = ContactDetector(cfg).detect(obs)
-    _, bd = registry.SCENARIO_BUILDERS[name]()
+    bd = registry.SCENARIO_BUILDERS[name]()
     mov = raw.moving.position
-    a, b, nrm = bd["moving_body"], bd["support_body"], np.asarray(raw.surface.normal, float)
+    a, b, nrm = bd.moving_body, bd.support_body, np.asarray(raw.surface.normal, float)
     events = []
     for ev in res.events:
         events.append(dict(time=ev.time, index=ev.index, label=ev.kind,
@@ -966,8 +967,8 @@ def _pair_spec(name, seed, hz, config, use_force=False):
             if use_force else None
         )
         gr = detect_scene(scene, config, edge_forces=edge_forces)
-        _, b = registry.SCENE_BUILDERS[name]()
-        rate = max(float(hz), float(b.get("record_hz") or hz))
+        b = registry.SCENE_BUILDERS[name]()
+        rate = max(float(hz), float(b.record_hz or hz))
         for e in scene.edges:
             pe = gr.per_edge[e.edge_id]
             sig = observe(scene.bodies[e.moving_body], _support_pose(scene, e), e.surface,
@@ -991,8 +992,8 @@ def _pair_spec(name, seed, hz, config, use_force=False):
     if use_force:
         obs = dataclasses.replace(obs, normal_force=np.asarray(raw.truth.normal_force, float)[:len(obs.t)])
     res = ContactDetector(cfg).detect(obs)
-    _, b = registry.SCENARIO_BUILDERS[name]()
-    rate = max(float(hz), float(b.get("record_hz") or hz))
+    b = registry.SCENARIO_BUILDERS[name]()
+    rate = max(float(hz), float(b.record_hz or hz))
     evs = [(ev.index, ev.kind) for ev in res.events]
     evs += [(im.index, f"impact e={im.restitution:.2f}") for im in res.impulses]
     pairs.append(dict(
@@ -1062,7 +1063,7 @@ def animate_pair(name, pair, builder, rate, out_path, fps=30, width=600, height=
     setup = _focus_setup(mujoco, model)
     _apply_focus(model, setup, a, b)                  # persistent: the pair stays lit all video
     data = _stepped_data(mujoco, model, build)
-    forcing = build.get("forcing")
+    forcing = build.forcing
     sub, nf = _step_cadence(model, build, rate)
     cam_for = {}
     for (idx, la, dist, wi, lname, az, el, _a, _b) in sched:

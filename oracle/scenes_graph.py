@@ -19,6 +19,7 @@ import mujoco
 
 from oracle._mjcf import obj_id as _id, options as _common_options
 from oracle.registry import scene
+from oracle.specs import EdgeSpec, SceneSpec
 
 
 # Shared skateboard geometry (kept as named constants so the surface point/normal, the
@@ -136,41 +137,42 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
         d.qvel[bj + 0] = launch_v
         d.qvel[pj + 0] = launch_v
 
-    build = {
-        "bodies": ["board", "person"],   # recorded pose trajectories (world is implicit)
-        "settle": settle,
-        "launch": init_after_settle,     # applied once, right after the settle phase
-        "duration": 2.0,
-        "edges": [
-            {
-                "edge_id": "person_board",
-                "moving_body": "person",
-                "support_body": "board",
-                "moving_geoms": ["persong"],
-                "support_geoms": ["deckg"],
+    return SceneSpec(
+        model=model,
+        bodies=("board", "person"),   # recorded pose trajectories (world is implicit)
+        settle=settle,
+        launch=init_after_settle,     # applied once, right after the settle phase
+        duration=2.0,
+        edges=(
+            EdgeSpec(
+                edge_id="person_board",
+                moving_body="person",
+                support_body="board",
+                moving_geoms=("persong",),
+                support_geoms=("deckg",),
                 # Surface = deck TOP face, in the BOARD-local frame (s.8: the surface is
                 # carried by the support body, which itself moves).
-                "surface_point_local": np.array([0.0, 0.0, deck_top_local]),
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
+                surface_point_local=np.array([0.0, 0.0, deck_top_local]),
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
                 # Tracked material point on the person: its bottom-face center.
-                "contact_point_local": np.array([0.0, 0.0, -_PERSON_HALF[2]]),
-                "shape": "box",          # mode hint: a box rider -> static/sliding, never rolling
-            },
-            {
-                "edge_id": "board_ground",
-                "moving_body": "board",
-                "support_body": "world",
+                contact_point_local=np.array([0.0, 0.0, -_PERSON_HALF[2]]),
+                shape="box",          # mode hint: a box rider -> static/sliding, never rolling
+            ),
+            EdgeSpec(
+                edge_id="board_ground",
+                moving_body="board",
+                support_body="world",
                 # The board touches the ground through its WHEELS, so the relevant geom
                 # pairs are wheel-geoms <-> floor (aggregated across the four wheels).
-                "moving_geoms": ["w_fl_g", "w_fr_g", "w_bl_g", "w_br_g"],
-                "support_geoms": ["floor"],
+                moving_geoms=("w_fl_g", "w_fr_g", "w_bl_g", "w_br_g"),
+                support_geoms=("floor",),
                 # Ground plane z = 0 in the world frame.
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
                 # Tracked material point on the board: its origin projected to the ground
                 # (the board origin sits one wheel-radius up, so the contact is one radius
                 # below it).
-                "contact_point_local": np.array([0.0, 0.0, -board_z]),
+                contact_point_local=np.array([0.0, 0.0, -board_z]),
                 # The DETECTOR observes this edge from the recorded BOARD pose (the only body
                 # recorded for this edge), tracking the board-fixed point above. A board-fixed
                 # point does not spin with the wheels -- it translates with the deck at the
@@ -180,12 +182,11 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
                 # (truth_mode_body), so truth and observation describe the same point and
                 # agree, and (b) hint shape="box" so the truth mode is classified as
                 # static/sliding (the wheels' rolling is a separate, un-tracked fact).
-                "truth_mode_body": "board",
-                "shape": "box",
-            },
-        ],
-    }
-    return model, build
+                truth_mode_body="board",
+                shape="box",
+            ),
+        ),
+    )
 
 
 @scene("box_on_two_blocks")
@@ -283,44 +284,44 @@ def _build_box_on_two_blocks() -> tuple[mujoco.MjModel, dict]:
     cp_L = np.array([blockL_x - box_x, 0.0, -box_half[2]])  # bottom point over blockL
     cp_R = np.array([blockR_x - box_x, 0.0, -box_half[2]])  # bottom point over blockR
 
-    build = {
-        "bodies": ["box", "blockL", "blockR"],
+    return SceneSpec(
+        model=model,
+        bodies=("box", "blockL", "blockR"),
         # Let the box seat onto the (snug, ~12 N) blockR touch and onto blockL before
         # recording, so the recorded window opens from a clean static equilibrium instead
         # of a 2-frame settling bounce in the truth labels. The clock is reset to 0 after
         # settle, so `drop_time` below is measured from the start of the recorded window.
-        "settle": 0.4,
-        "duration": 3.0,
-        "forcing": forcing,
-        "edges": [
-            {
-                "edge_id": "box_blockL",
-                "moving_body": "box",
-                "support_body": "blockL",
-                "moving_geoms": ["boxg"],
-                "support_geoms": ["blockLg"],
-                "surface_point_local": surf_L,
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-                "contact_point_local": cp_L,
-                "shape": "box",
-            },
-            {
-                "edge_id": "box_blockR",
-                "moving_body": "box",
-                "support_body": "blockR",
-                "moving_geoms": ["boxg"],
-                "support_geoms": ["blockRg"],
-                "surface_point_local": surf_R,
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-                "contact_point_local": cp_R,
-                "shape": "box",
-            },
-        ],
-        "meta": {
+        settle=0.4,
+        duration=3.0,
+        forcing=forcing,
+        edges=(
+            EdgeSpec(
+                edge_id="box_blockL",
+                moving_body="box",
+                support_body="blockL",
+                moving_geoms=("boxg",),
+                support_geoms=("blockLg",),
+                surface_point_local=surf_L,
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
+                contact_point_local=cp_L,
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box_blockR",
+                moving_body="box",
+                support_body="blockR",
+                moving_geoms=("boxg",),
+                support_geoms=("blockRg",),
+                surface_point_local=surf_R,
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
+                contact_point_local=cp_R,
+                shape="box",
+            ),
+        ),
+        meta={
             "active_set_change": (
                 "{box_blockL, box_blockR} -> {box_blockL} at t=%.2fs (blockR lowered "
                 "%.2fm)." % (drop_time, blockR_drop)
             ),
         },
-    }
-    return model, build
+    )
