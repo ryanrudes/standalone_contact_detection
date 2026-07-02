@@ -39,7 +39,7 @@ import numpy as np
 
 import mujoco
 
-from ._mjcf import body_dofadr as _dofadr, body_id as _bid, options as _options
+from ._mjcf import body_dofadr as _dofadr, options as _options
 
 from oracle.registry import scene
 from oracle.specs import EdgeSpec, SceneSpec

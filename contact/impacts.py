@@ -75,10 +75,9 @@ sign, ``v_after > 0`` (separating), so ``-v_after / v_before = -(+)/(-) = +`` --
 positive ``e`` in ``(0, 1]``. A plastic/sticking landing has ``v_after ~ 0`` so
 ``e ~ 0``. We clip negatives to 0 (a body cannot leave faster *into* the surface),
 and report ``NaN`` when ``e`` is not measurable: when ``v_before`` is ~0 (no real
-approach) or either side is non-finite. Note we deliberately do NOT substitute a
-prior here (``ImpactParams.restitution_default`` is the HMM's prior for *unmeasured*
-events elsewhere); a detected impact reports what its own kinematics support, and
-``NaN`` honestly flags "bounce not resolved" rather than fabricating a number.
+approach) or either side is non-finite. We deliberately do NOT substitute a prior;
+a detected impact reports what its own kinematics support, and ``NaN`` honestly
+flags "bounce not resolved" rather than fabricating a number.
 
 Normal-impulse atom
 -------------------

@@ -126,7 +126,6 @@ class ImpactParams:
                                            # (low enough to catch the small late bounces of a
                                            # nearly-settled object; still rejects rolling/slide noise)
     detect_smooth_time: float = 0.01       # s, light smoothing for impact detection (preserve sharpness)
-    restitution_default: float = 0.0       # prior restitution when it cannot be measured
 
 
 @dataclass
@@ -139,7 +138,6 @@ class MaterialParams:
     """
 
     stiffness: float | None = None    # N/m
-    damping: float = 0.0              # N/(m/s)
     friction: float = 0.6             # Coulomb coefficient
     slip_speed_threshold: float = 0.02  # m/s, tangential speed above which a contact is deemed sliding (stick/slip, §7)
 

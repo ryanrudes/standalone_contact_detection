@@ -36,7 +36,7 @@ layer supplies per-state ``mean_dwell_frames`` (e.g. from
 ``TransitionParams.mean_dwell_time`` divided by the frame period) and the global
 ``concentration`` (e.g. ``TransitionParams.dwell_concentration``) and sits on top.
 
-Everything is in log-space (``logsumexp`` reused from ``contact.hmm``) because
+Everything is in log-space because
 likelihoods over a whole trajectory underflow catastrophically if multiplied raw
 (THEORY.md §4 & §5).
 
@@ -253,7 +253,8 @@ def hsmm_viterbi(
     is what lets a single state span a run longer than ``D`` without the spurious
     state flip that a hard cap would otherwise force into the middle of a real bout.
 
-    We track, per ``(t, s)``, two "flavours" of segment ending:
+    The recursion — the specification of what ``markovlib``'s segmental engine
+    computes for us — tracks, per ``(t, s)``, two "flavours" of segment ending:
 
         V_end[t, s]  = best score of a path covering frames 0..t-1 whose last segment
                        is state s and *ended naturally* (its length d was < D).
@@ -344,7 +345,8 @@ def hsmm_posteriors(
     **duration censoring** as :func:`hsmm_viterbi` (a segment that runs the full
     ``D = max_dur`` frames is right-censored -- scored by the survival ``log P(d>=D)``
     and free to continue as the *same* state -- so a bout longer than the cap is
-    represented exactly, not corrupted by a phantom flip). We therefore split the
+    represented exactly, not corrupted by a phantom flip). The recursion — again the
+    specification of the markovlib computation this function delegates — splits the
     standard EDHMM end-variable into a *naturally-ended* and a *censored* flavour, all
     in log-space, with ``seg(a, b, s) = sum_{u=a..b-1} emit[u, s]`` and the off-diagonal
     (state-changing) transition ``A[s', s]``:

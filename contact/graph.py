@@ -597,7 +597,7 @@ def detect_scene(
     #   * E >  enumerate_max_edges -> a Rao-Blackwellized particle SMOOTHER over the
     #     active-set sequence (contact.structure_inference.particle_filter_active_sets) that
     #     never materializes the 2**E alphabet, so it stays tractable as the graph grows.
-    enumerate_max = int(getattr(cfg.inference, "enumerate_max_edges", 4))
+    enumerate_max = int(cfg.inference.enumerate_max_edges)
     dt = _median_dt(t)
 
     if E <= enumerate_max:
@@ -673,7 +673,7 @@ def detect_scene(
         log_evidence = np.stack([log_inactive, log_active], axis=-1)  # (T, E, 2)
         posterior = structure_inference.StructurePosterior(log_dwell_stay, seed=0)
         active_posterior, map_sets = posterior.filter(
-            log_evidence, n_particles=int(getattr(cfg.inference, "n_particles", 256))
+            log_evidence, n_particles=int(cfg.inference.n_particles)
         )
         active_posterior = np.clip(np.asarray(active_posterior, dtype=float), 0.0, 1.0)
         map_active_set = [
@@ -683,7 +683,7 @@ def detect_scene(
             "num_edges": E,
             "num_subsets": 1 << E,
             "inference": "particle_filter",
-            "n_particles": int(getattr(cfg.inference, "n_particles", 256)),
+            "n_particles": int(cfg.inference.n_particles),
             "active_set_dwell_time": float(cfg.graph.active_set_dwell_time),
             "energy_prior_active": False,
             "balance_prior_active": False,

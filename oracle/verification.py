@@ -297,17 +297,6 @@ def verify_scene(name: str, seed: int = 0) -> list[Check]:
 # Driver
 # --------------------------------------------------------------------------------------
 
-def verify_all(seed: int = 0) -> dict[str, list[Check]]:
-    out: dict[str, list[Check]] = {}
-    for name in SCENARIO_BUILDERS:
-        if name in SCENARIO_EXPECT:
-            out[name] = verify_scenario(name, seed)
-    for name in SCENE_BUILDERS:
-        if name in SCENE_EXPECT:
-            out[name] = verify_scene(name, seed)
-    return out
-
-
 def worst_status(checks: list[Check]) -> str:
     if any(c.status == "FAIL" for c in checks):
         return "FAIL"

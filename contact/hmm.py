@@ -1,4 +1,4 @@
-"""Generic log-space Hidden Markov Model inference (numpy only).
+"""Generic log-space Hidden Markov Model inference (an adapter over the vendored markovlib).
 
 This module is the *discrete shadow* of the hybrid dynamical system of
 THEORY.md §5: the hybrid system's continuous flows-within-a-mode and
@@ -91,8 +91,10 @@ def forward_backward(
 ) -> tuple[np.ndarray, float]:
     """Smoothed state posterior via the forward-backward algorithm (log-space).
 
-    Implements the two classic recursions, both in log-space using ``logsumexp``
-    so trajectory-length products never underflow. This is the *smoothing*
+    The two classic recursions, in log-space so trajectory-length products never
+    underflow — written out here as the *specification*; ``markovlib.smooth``
+    performs them (this adapter's job is the contract: accept both transition
+    layouts, validate shapes, return ``(gamma, loglik)``). This is the *smoothing*
     inference of THEORY.md §5: it conditions each frame on the entire
     record (past and future), which is exactly why a real-time causal detector is
     necessarily less certain than this offline one (§6, the
@@ -157,7 +159,8 @@ def viterbi(
     single most likely *contiguous* state sequence — THEORY.md §5's "clean
     boolean segmentation." Replacing every product with a sum in log-space and
     every marginal sum with a max turns the forward recursion into a max-product
-    (shortest-path) recursion:
+    (shortest-path) recursion — the specification of what ``markovlib.decode``
+    computes for us:
 
         delta[0, s] = log_init[s] + log_emission[0, s]
         delta[t, s] = log_emission[t, s]

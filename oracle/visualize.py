@@ -207,8 +207,6 @@ def _scene_model(builder, width, height):
 
 
 #: RGB of the focus materials (for legends/banners), matching vz_focusA / vz_focusB.
-_FOCUS_A_RGB = (0.10, 0.85, 0.85)   # moving body  (teal)
-_FOCUS_B_RGB = (1.00, 0.55, 0.10)   # support body (orange)
 
 
 def _focus_setup(mujoco, model):
@@ -244,12 +242,6 @@ def _apply_focus(model, setup, a, b):
             model.geom_matid[g] = ids["vz_focusB"]
         else:
             model.geom_matid[g] = ids["vz_faded"]
-
-
-def _clear_focus(model, setup):
-    """Restore the cruise (full-colour) materials."""
-    if setup is not None:
-        model.geom_matid[:] = setup[0]
 
 
 def _quat_rotate(q, v):
@@ -477,7 +469,7 @@ def _build_animation(t, frames, feature_rows, state_post, state_labels, contact_
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib import animation, gridspec
+    from matplotlib import gridspec
 
     n = min(len(t), len(frames))
     t = np.asarray(t[:n], float)
@@ -778,7 +770,7 @@ def _clip_animation(frames, lo, rate, ev, out_path, fps, slowmo):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib import animation, gridspec
+    from matplotlib import gridspec
 
     n = len(frames)
     tw = (lo + np.arange(n)) / rate
@@ -840,7 +832,7 @@ def _build_reel_animation(frames, sched, panel, color_map, title, out_path, fps,
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib import animation, gridspec
+    from matplotlib import gridspec
 
     t = np.asarray(panel["t"], float)
     t0, t1 = float(t[0]), float(t[-1])

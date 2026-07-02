@@ -295,7 +295,7 @@ def _build_drop_on_incline() -> tuple[mujoco.MjModel, dict]:
         moving_body="ball",
         moving_geom="ballg",
         support_body="world",
-        support_geom="ramp",  # noqa: (duration shortened below to keep the ball framed large)
+        support_geom="ramp",  # (duration shortened below to keep the ball framed large)
         # Surface point + TILTED normal in the support (world) frame -- the incline top face.
         # We push the observation plane out by one radius along the tilted normal so the
         # tracked sphere CENTER's signed distance reads ~0 at the strike (the sphere

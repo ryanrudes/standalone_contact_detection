@@ -300,7 +300,7 @@ def test_material_stiffness_populates_force_and_slip_state():
     physics requirement.)
     """
     cfg = DetectorConfig(
-        material=MaterialParams(stiffness=2000.0, damping=10.0, friction=0.6)
+        material=MaterialParams(stiffness=2000.0, friction=0.6)
     )
     _raw, _obs, result, _scores = _run("drop_rest", config=cfg)
 
