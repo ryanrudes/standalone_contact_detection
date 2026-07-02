@@ -24,3 +24,8 @@ dev = [
 # as `markovlib`; the contact engines delegate to it. Consumed as an editable path dependency.
 [tool.uv.sources]
 marmo = { path = "markovlib", editable = true }
+
+# Scope collection to this repo's own suites; the vendored markovlib/ submodule carries its own
+# suite and env (run it explicitly with `uv run pytest markovlib/tests` when bumping the pin).
+[tool.pytest.ini_options]
+testpaths = ["tests", "test_main.py"]

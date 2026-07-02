@@ -23,6 +23,7 @@ Run with no arguments for the ``drop_rest`` default.
 from __future__ import annotations
 
 import argparse
+import os
 
 import numpy as np
 
@@ -36,8 +37,9 @@ from contact import (
 )
 from contact import report
 
-#: Where the diagnostic figure is written (unless --no-plot).
-_PLOT_PATH = "/Users/ryanrudes/GitHub/standalone_contact_detection/contact_detection.png"
+#: Where the diagnostic figure is written (unless --no-plot): next to this script, like
+#: detect_scene.py's default (the .png is git-ignored).
+_PLOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contact_detection.png")
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
