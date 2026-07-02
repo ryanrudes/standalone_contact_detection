@@ -1,12 +1,12 @@
-"""Soft global physics priors for the multi-body contact graph (THEORY.md section 8).
+"""Soft global physics priors for the multi-body contact graph (THEORY.md §8).
 
-THEORY.md s.8 names two *global* consistency checks that link all the edges of the
+THEORY.md §8 names two *global* consistency checks that link all the edges of the
 contact graph together — quantities no single per-edge detector can see, because they
 are properties of the whole scene at once:
 
   * an **energy / dissipation budget** — "a static contact dissipates nothing, sliding
     dissipates ``mu*lambda_n*||v_slip||``, an impact dissipates ``1/2 m v_n^2 (1-e^2)``"
-    (s.8). Read as an inference factor: the scene's total mechanical energy
+    (§8). Read as an inference factor: the scene's total mechanical energy
     ``E_mech(t) = sum_b (m_b g h_b + 1/2 m_b ||v_b||^2)`` may only *decrease* through a
     genuinely dissipative active contact (sliding / impact). An energy drop with *no*
     active contact to absorb it, or energy *spontaneously increasing*, is physically
@@ -18,9 +18,9 @@ are properties of the whole scene at once:
 Both are **best-effort soft factors** (a nudge, never a veto): they are log-additive
 terms over the candidate active-set states that :mod:`contact.graph` enumerates, and
 they return **all-zeros** (a true no-op) whenever the inputs are too poor to evaluate
-them honestly. This is deliberate — s.8 lists them as *consistency checks* layered on
+them honestly. This is deliberate — §8 lists them as *consistency checks* layered on
 top of the per-edge emission/temporal evidence, not as a source of evidence on their
-own. The per-edge :class:`contact.model.ContactDetector` posteriors remain the primary
+own. The per-edge :class:`contact.detector.ContactDetector` posteriors remain the primary
 signal; these factors only break ties the kinematics leave open.
 
 Honest approximations (documented in full at each function):
@@ -36,9 +36,9 @@ Honest approximations (documented in full at each function):
     under-estimate of KE for spinning bodies. Potential energy is ``m g h`` with ``h``
     the world z of the body origin (gravity assumed ``-z``).
   * **Attribution.** We do not try to compute the *exact* dissipation rate of each
-    contact (that needs the unobservable force magnitude, s.7). We only ask the much
+    contact (that needs the unobservable force magnitude, §7). We only ask the much
     weaker, observable question: *is there an active dissipative edge available to
-    explain the observed energy loss?* That keeps the factor honest about s.7's
+    explain the observed energy loss?* That keeps the factor honest about §7's
     observability limits.
   * **Support polygon / CoM.** Without per-body masses the CoM is the unweighted mean of
     the body origins (documented). The support polygon is the convex hull (in the
@@ -72,7 +72,7 @@ _G = 9.81
 
 
 # --------------------------------------------------------------------------------------
-# Leaf numeric helpers — delegated to contact.signals where present (THEORY.md s.4: we
+# Leaf numeric helpers — delegated to contact.signals where present (THEORY.md §4: we
 # smooth before differentiating because raw differentiation amplifies mocap noise). A
 # pure-numpy fallback keeps this module importable on its own.
 # --------------------------------------------------------------------------------------
@@ -149,12 +149,12 @@ def _body_mass(masses, name: str) -> float:
 
 
 # --------------------------------------------------------------------------------------
-# Energy budget (THEORY.md s.8: the raw material for the dissipation check).
+# Energy budget (THEORY.md §8: the raw material for the dissipation check).
 # --------------------------------------------------------------------------------------
 
 
 def energy_budget(scene: MultiBodyScene, masses=None) -> dict:
-    """Per-body kinetic + potential energy over time, plus the scene total (THEORY.md s.8).
+    """Per-body kinetic + potential energy over time, plus the scene total (THEORY.md §8).
 
     For each body ``b`` with world-origin trajectory ``x_b(t)`` we compute
 
@@ -163,7 +163,7 @@ def energy_budget(scene: MultiBodyScene, masses=None) -> dict:
         E_b(t)  = PE_b(t) + KE_b(t)
 
     and the scene total mechanical energy ``E_mech(t) = sum_b E_b(t)``. Velocities come
-    from Gaussian-smoothing the body positions (THEORY.md s.4) then differentiating on
+    from Gaussian-smoothing the body positions (THEORY.md §4) then differentiating on
     the body's own (possibly non-uniform) clock.
 
     Approximations (honest, per the module docstring):
@@ -172,7 +172,7 @@ def energy_budget(scene: MultiBodyScene, masses=None) -> dict:
         ``1/2 omega^T I omega`` is omitted. This *under-estimates* the KE of spinning
         bodies; the dissipation factor only uses the sign/shape of dE/dt, which is robust
         to a missing additive rotational term that is itself slowly varying for the quiet
-        stances and steady slides s.8 cares about.
+        stances and steady slides §8 cares about.
       * **Unit masses => "relative".** With ``masses=None`` every ``m_b = 1`` and the
         returned ``units`` field is ``"relative"`` (Joules only up to the unknown mass
         scale). With a ``masses`` map the energies are in Joules (``units="joule"``).
@@ -216,7 +216,7 @@ def energy_budget(scene: MultiBodyScene, masses=None) -> dict:
 
     T = t_ref.shape[0]
     # A representative smoothing time: short, like the per-edge geometry default (0.05 s),
-    # but converted to be safe on the body's own clock. We smooth in real time (s.4).
+    # but converted to be safe on the body's own clock. We smooth in real time (§4).
     if T >= 2:
         dts = np.diff(t_ref)
         dts = dts[dts > 0.0]
@@ -238,7 +238,7 @@ def energy_budget(scene: MultiBodyScene, masses=None) -> dict:
         m = _body_mass(masses, name)
         used_masses[name] = m
 
-        # Smooth then differentiate the world position to get the COM velocity (s.4).
+        # Smooth then differentiate the world position to get the COM velocity (§4).
         pos_s = np.asarray(smooth_fn(pos, t_ref, sigma_time), dtype=float)
         vel = np.asarray(deriv_fn(pos_s, t_ref), dtype=float)        # (T, 3) world
         speed2 = np.sum(vel * vel, axis=1)                            # (T,) ||v||^2
@@ -335,7 +335,7 @@ def _normalize_subset_index(
 
 
 # --------------------------------------------------------------------------------------
-# Energy / dissipation log-factor (THEORY.md s.8).
+# Energy / dissipation log-factor (THEORY.md §8).
 # --------------------------------------------------------------------------------------
 
 
@@ -345,9 +345,9 @@ def energy_log_factor(
     subset_index_per_state,
     masses=None,
 ) -> np.ndarray:
-    """Soft per-state log-factor enforcing the s.8 energy/dissipation budget.
+    """Soft per-state log-factor enforcing the §8 energy/dissipation budget.
 
-    The physics (THEORY.md s.8): mechanical energy is conserved within a frictionless
+    The physics (THEORY.md §8): mechanical energy is conserved within a frictionless
     free flight, *dissipated* by a sliding or impacting contact, and *cannot
     spontaneously increase* in a passive scene. Turned into a soft factor over the
     candidate active-set states:
@@ -366,10 +366,10 @@ def energy_log_factor(
         normalization but keeps the factor honest about sign).
 
     "Potentially dissipative" is judged *kinematically* (the only observable channel,
-    s.7): an active edge can dissipate if its moving body is actually moving relative to
+    §7): an active edge can dissipate if its moving body is actually moving relative to
     the scene — we proxy this by the moving body's COM speed exceeding a small threshold.
     We deliberately do **not** try to compute ``mu*lambda_n*||v_slip||`` exactly, because
-    ``lambda_n`` (the force magnitude) is unobservable from kinematics alone (s.7); the
+    ``lambda_n`` (the force magnitude) is unobservable from kinematics alone (§7); the
     factor only asks the weaker, recoverable question *is a dissipative channel available?*
 
     Gentleness. The reward/penalty is a bounded logistic-style nudge scaled by
@@ -549,7 +549,7 @@ def _edge_contact_point_world(scene: MultiBodyScene, edge: ContactEdge, k: int) 
     """World position of an edge's tracked contact point at frame ``k`` (or ``None``).
 
     The contact point is the moving body's material point ``contact_point_local`` carried
-    into the world by that body's pose at frame ``k`` (THEORY.md s.1, identical to
+    into the world by that body's pose at frame ``k`` (THEORY.md §1, identical to
     :func:`contact.geometry.observe` step 1). Returns ``None`` if the body or frame is
     unavailable.
     """
@@ -589,7 +589,7 @@ def _scene_com_world(scene: MultiBodyScene, masses, k: int) -> np.ndarray | None
 
 
 # --------------------------------------------------------------------------------------
-# Balance log-factor (THEORY.md s.8: CoM over the support polygon).
+# Balance log-factor (THEORY.md §8: CoM over the support polygon).
 # --------------------------------------------------------------------------------------
 
 
@@ -599,9 +599,9 @@ def balance_log_factor(
     subset_index_per_state,
     support_polygon=None,
 ) -> np.ndarray:
-    """Soft per-state log-factor: CoM should project inside the active support polygon (s.8).
+    """Soft per-state log-factor: CoM should project inside the active support polygon (§8).
 
-    The physics (THEORY.md s.8): during a *quasi-static* stance the scene's centre of mass
+    The physics (THEORY.md §8): during a *quasi-static* stance the scene's centre of mass
     must project (along gravity, i.e. into the world horizontal plane) inside the support
     polygon — the convex hull of the *active* contact points. An active set whose polygon
     contains the CoM projection is statically balanced and is rewarded; one that leaves the
@@ -677,7 +677,7 @@ def balance_log_factor(
         if fp.ndim == 2 and fp.shape[0] >= 1 and fp.shape[1] >= 2:
             fixed_poly = fp[:, :2]
 
-    # --- quiescence weight (quasi-static gate, s.8): fast CoM => down-weight the factor.
+    # --- quiescence weight (quasi-static gate, §8): fast CoM => down-weight the factor.
     com_xy = np.full((T, 2), np.nan, dtype=float)
     for k in range(T):
         c = _scene_com_world(scene, masses, k)
@@ -741,7 +741,7 @@ def balance_log_factor(
             any_signal = True
         if any_signal:
             col -= col.mean()                     # relative preference only
-            out[k] = quies[k] * col               # quasi-static gate (s.8)
+            out[k] = quies[k] * col               # quasi-static gate (§8)
 
     return out
 

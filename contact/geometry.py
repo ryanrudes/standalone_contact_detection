@@ -1,26 +1,26 @@
 """The relative-frame core: poses -> support-relative ContactObservations.
 
-This module is the concrete realization of THEORY.md sections 1 and 3. Section 1
+This module is the concrete realization of THEORY.md §1 & §3. §1
 ("contact is *relative* and *geometric*") forces every quantity to be measured in
 the frame of one body of the pair — the *support* — never in the world: a foot on a
 fast-moving skateboard is in solid contact even though it screams across the world.
-Section 3 ("a contact constrains *motion*") forces us to keep the relative motion as
+§3 ("a contact constrains *motion*") forces us to keep the relative motion as
 a 6-component **twist** (3 linear + 3 angular) decomposed against the contact frame,
 because the *correlations* between its components are exactly what name the mode.
 
 So `observe(...)` does, per frame:
 
-    1. place the tracked material point in the world,                       (s.1)
-    2. carry the support's plane into the world (it may translate/rotate),  (s.1)
-    3. measure the support-relative *gap* (signed plane distance),          (s.1 / s.2)
-    4. build a contact frame (z = surface normal, x/y a continuous tangent),(s.3)
+    1. place the tracked material point in the world,                       (§1)
+    2. carry the support's plane into the world (it may translate/rotate),  (§1)
+    3. measure the support-relative *gap* (signed plane distance),          (§1 / §2)
+    4. build a contact frame (z = surface normal, x/y a continuous tangent),(§3)
     5. compute the RELATIVE linear velocity of the coincident material
-       points and split it into normal / tangent in that frame,            (s.3)
-    6. compute the RELATIVE angular velocity and split it likewise.         (s.3)
+       points and split it into normal / tangent in that frame,            (§3)
+    6. compute the RELATIVE angular velocity and split it likewise.         (§3)
 
 The key subtlety, and the whole reason this file exists, is step 5: the velocity that
 distinguishes sliding from rolling is the velocity of the *material point currently at
-the contact* — `v = v_origin + omega x r` (THEORY.md s.3, final paragraph) — and it
+the contact* — `v = v_origin + omega x r` (THEORY.md §3, final paragraph) — and it
 must be taken *relative to the coincident point on the support*. Differencing world
 velocities is wrong the instant the support moves.
 
@@ -35,7 +35,7 @@ Frame conventions (mirroring contact/types.py):
 Differentiation of the (noisy) pose streams is delegated to ``contact.signals`` (the
 only cross-module import this file's spec permits): positions and quaternions are
 Gaussian-smoothed *first*, then finite-differenced, because differentiation amplifies
-sensor noise (THEORY.md s.4). We fall back to local equivalents only if that module
+sensor noise (THEORY.md §4). We fall back to local equivalents only if that module
 is unavailable, so this leaf stays importable on its own.
 """
 
@@ -48,7 +48,7 @@ from .types import ContactGeometry, ContactObservations, PoseTrajectory, Support
 
 # --------------------------------------------------------------------------------------
 # Differentiation/smoothing is delegated to the time-aware leaf helpers in contact.signals
-# (THEORY.md s.4: smooth in real time before differentiating, never raw finite differences).
+# (THEORY.md §4: smooth in real time before differentiating, never raw finite differences).
 # --------------------------------------------------------------------------------------
 
 
@@ -56,14 +56,14 @@ from .types import ContactGeometry, ContactObservations, PoseTrajectory, Support
 # Quaternion helpers — scalar-first (w, x, y, z), unit norm. Vectorized over the leading
 # time axis. A quaternion rotates a *body-local* vector into the *world*:
 # v_world = R(q) @ v_local. These are the elementary group operations on SO(3) used to
-# carry the support's plane into the world (s.1) and to read body angular rates (s.3).
+# carry the support's plane into the world (§1) and to read body angular rates (§3).
 # --------------------------------------------------------------------------------------
 
 
 def quat_conjugate(q: np.ndarray) -> np.ndarray:
     """Conjugate (= inverse for unit quaternions) of scalar-first ``q``.
 
-    THEORY.md s.3: the inverse rotation; used to map world vectors back into a body
+    THEORY.md §3: the inverse rotation; used to map world vectors back into a body
     frame and to form ``dq/dt * conj(q)`` for angular velocity.
 
     Parameters
@@ -85,7 +85,7 @@ def quat_conjugate(q: np.ndarray) -> np.ndarray:
 def quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Hamilton product ``a * b`` of scalar-first quaternions (composition of rotations).
 
-    THEORY.md s.3: rotation composition; ``R(a*b) = R(a) R(b)``. Broadcasts over any
+    THEORY.md §3: rotation composition; ``R(a*b) = R(a) R(b)``. Broadcasts over any
     leading time axis.
 
     Parameters
@@ -112,7 +112,7 @@ def quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def quat_to_matrix(q: np.ndarray) -> np.ndarray:
     """Rotation matrix/matrices ``R(q)`` with ``v_world = R(q) @ v_local``.
 
-    THEORY.md s.1: the body->world orientation map used to place local geometry
+    THEORY.md §1: the body->world orientation map used to place local geometry
     (contact point, plane point, plane normal) into the world frame. Input is
     normalized defensively so non-unit inputs still give a proper rotation.
 
@@ -146,7 +146,7 @@ def quat_to_matrix(q: np.ndarray) -> np.ndarray:
 def quat_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
     """Rotate body-local vector(s) ``v`` into the world by ``q``: ``R(q) @ v``.
 
-    THEORY.md s.1: applies the body->world rotation. Broadcasts over a leading time
+    THEORY.md §1: applies the body->world rotation. Broadcasts over a leading time
     axis so a ``(T, 4)`` pose stream rotates either one fixed ``(3,)`` vector or a
     ``(T, 3)`` stream of vectors.
 
@@ -179,11 +179,11 @@ def _angular_velocity_world(
 ) -> np.ndarray:
     """World-frame angular velocity ``omega(t)`` from a quaternion sequence.
 
-    THEORY.md s.3 (and the spec): for a body whose orientation evolves as ``q(t)``, the
+    THEORY.md §3 (and the spec): for a body whose orientation evolves as ``q(t)``, the
     body's world angular velocity is the vector part of ``2 * (dq/dt) * conj(q)``. We
     smooth the quaternion stream first (in real time) and finite-difference it, exactly
     as we do for positions, because differentiating raw noisy orientation is hopeless
-    (s.4). The quaternion is renormalized and sign-aligned across frames so the double
+    (§4). The quaternion is renormalized and sign-aligned across frames so the double
     cover (q and -q encode the same rotation) does not inject a spurious 2-revolution
     jump into dq/dt.
 
@@ -209,7 +209,7 @@ def _angular_velocity_world(
 
 
 # --------------------------------------------------------------------------------------
-# Plane gap (THEORY.md s.1 / s.2): the gap function is the support-relative signed
+# Plane gap (THEORY.md §1 / §2): the gap function is the support-relative signed
 # distance along the contact normal. For a planar support it is the dot of (point -
 # plane_point) with the (unit) outward normal: > 0 separation, < 0 penetration.
 # --------------------------------------------------------------------------------------
@@ -222,9 +222,9 @@ def plane_gap(
 ) -> np.ndarray:
     """Signed distance of points to a (possibly moving) plane; ``+`` on the normal side.
 
-    THEORY.md s.1: this is the gap function ``g`` specialized to a plane — the value of
+    THEORY.md §1: this is the gap function ``g`` specialized to a plane — the value of
     the support's signed-distance field at the contact point. ``g > 0`` means the point
-    is on the outward-normal side (separation), ``g < 0`` means penetration (s.2).
+    is on the outward-normal side (separation), ``g < 0`` means penetration (§2).
 
     Parameters
     ----------
@@ -251,7 +251,7 @@ def plane_gap(
 
 
 # --------------------------------------------------------------------------------------
-# Contact frame (THEORY.md s.3): z = world surface normal; x, y span the tangent plane.
+# Contact frame (THEORY.md §3): z = world surface normal; x, y span the tangent plane.
 # We need the tangent basis to be *continuous across frames* (no sign flips), otherwise
 # v_tangent / omega_tangent would acquire spurious jumps that look like motion. We get
 # continuity by *transporting* a single tangent reference along the normal's path rather
@@ -262,7 +262,7 @@ def plane_gap(
 def _tangent_basis(normals: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Continuous orthonormal tangent basis ``(x_hat, y_hat)`` for a normal stream.
 
-    THEORY.md s.3: the tangent plane carries the sliding/rolling components, so its axes
+    THEORY.md §3: the tangent plane carries the sliding/rolling components, so its axes
     must not flip frame-to-frame. We pick one tangent at the first frame, then for every
     later frame project the previous ``x_hat`` onto the new tangent plane and re-normalize
     (a discrete parallel transport). ``y_hat = z_hat x x_hat`` completes a right-handed
@@ -313,7 +313,7 @@ def _tangent_basis(normals: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 # --------------------------------------------------------------------------------------
-# The relative-frame core (THEORY.md s.1 & s.3): poses -> ContactObservations.
+# The relative-frame core (THEORY.md §1 & §3): poses -> ContactObservations.
 # --------------------------------------------------------------------------------------
 
 
@@ -327,7 +327,7 @@ def observe(
 ) -> ContactObservations:
     """Turn a moving body + (possibly moving) support into support-relative observations.
 
-    This is the relative-frame core of THEORY.md sections 1 (contact is relative and
+    This is the relative-frame core of THEORY.md §1 (contact is relative and
     geometric) and 3 (a contact constrains motion; keep the relative twist with its
     correlations). Every output channel lives in the support's instantaneous contact
     frame, so a body riding a fast-moving support reads ~0 relative motion — the whole
@@ -367,7 +367,7 @@ def observe(
         is the body origin.
     vel_smooth_time : float, optional
         Gaussian smoothing time (s) applied to positions and quaternions before
-        differentiation (THEORY.md s.4). Default 0.05 s.
+        differentiation (THEORY.md §4). Default 0.05 s.
     geometry : ContactGeometry | None, optional
         The per-frame, world-frame contact-geometry resolver (DESIGN.md III.1/III.2). When
         ``None`` (the default) steps 1-3 below are produced by a
@@ -443,12 +443,12 @@ def observe(
         v_moving_point = v_com + np.cross(omega_moving, p - mov_pos)  # (T,3) world
     else:
         # FIXED material point (FlatRegion / Sphere*): differentiate its smooth world
-        # trajectory (THEORY.md s.4). This is the verbatim pre-Phase-2 path -> bit-identical.
+        # trajectory (THEORY.md §4). This is the verbatim pre-Phase-2 path -> bit-identical.
         v_moving_point = derivative(gaussian_smooth(p, t, vel_smooth_time), t)  # (T,3) world
 
     # (b) Velocity of the support point momentarily coincident with p. A rigid body's
     #     material-point velocity is v_origin + omega x r, where r is the lever arm from
-    #     the support origin to the contact point (THEORY.md s.3). v_origin and
+    #     the support origin to the contact point (THEORY.md §3). v_origin and
     #     omega_support both come from the smoothed/differentiated support pose.
     v_sup_origin = derivative(gaussian_smooth(sup_pos, t, vel_smooth_time), t)  # (T,3) world
     omega_support = _angular_velocity_world(sup_quat, t, vel_smooth_time)  # (T,3) world

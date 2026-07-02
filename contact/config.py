@@ -1,7 +1,7 @@
 """Physical and statistical parameters for the detector.
 
 These are deliberately *physically interpretable* (real noise scales, real material
-stiffness) rather than tuned to any simulator — see THEORY.md section 9 on keeping
+stiffness) rather than tuned to any simulator — see THEORY.md §9 on keeping
 emission/material models transferable. Defaults are conservative values for typical
 optical mocap (~100-250 Hz).
 """
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class EmissionParams:
-    """Parameters of the per-state emission likelihoods (THEORY.md sections 4 & 3).
+    """Parameters of the per-state emission likelihoods (THEORY.md §4 & §3).
 
     The contact states are sharp peaks on a twist subspace; FREE is diffuse. Each
     scale is the standard deviation of a (log-)Gaussian unless noted.
@@ -42,11 +42,11 @@ class EmissionParams:
     pivot_speed: float = 1.00       # pivoting: characteristic spin rate about the normal
     free_omega_sigma: float = 3.00  # FREE: broad angular prior
 
-    # --- rolling coupling (THEORY.md section 3): |v_tangent| ~ roll_radius * |omega_tangent| ---
+    # --- rolling coupling (THEORY.md §3): |v_tangent| ~ roll_radius * |omega_tangent| ---
     roll_radius: float = 0.05       # effective rolling radius (m)
     roll_sigma: float = 0.03        # tolerance on the rolling constraint residual (m/s)
 
-    # --- impact transient (THEORY.md section 6) ---
+    # --- impact transient (THEORY.md §6) ---
     impact_speed: float = 0.30      # characteristic relative normal closing speed at impact
 
 
@@ -94,7 +94,7 @@ class ForceEmissionParams:
 
 @dataclass
 class TransitionParams:
-    """Temporal prior for the HMM/HSMM (THEORY.md section 5).
+    """Temporal prior for the HMM/HSMM (THEORY.md §5).
 
     Baseline is a continuous-time Markov jump discretized per frame:
     P(stay over dt) = exp(-dt/dwell). The full model upgrades this two ways:
@@ -106,7 +106,7 @@ class TransitionParams:
 
     mean_dwell_time: float = 0.20    # s, baseline expected dwell before switching
     impact_dwell_time: float = 0.04  # s, IMPACT is a short transient bridging free<->contact
-    gap_gate: float = 0.008          # m, gap within which free->contact entry is enabled (the s.5 guard)
+    gap_gate: float = 0.008          # m, gap within which free->contact entry is enabled (the §5 guard)
     gap_gate_softness: float = 0.004 # m, logistic softness of the gap gate
     use_semi_markov: bool = True     # explicit-duration (HSMM) decoding vs plain Markov
     dwell_concentration: float = 4.0 # duration-distribution shape; higher => sharper/more deterministic dwell
@@ -114,7 +114,7 @@ class TransitionParams:
 
 @dataclass
 class ImpactParams:
-    """Impact detection and characterization (THEORY.md section 6).
+    """Impact detection and characterization (THEORY.md §6).
 
     Impacts are singular events (velocity steps / force atoms). They are detected by a
     matched filter on a LIGHTLY-smoothed normal velocity (over-smoothing destroys their
@@ -131,7 +131,7 @@ class ImpactParams:
 
 @dataclass
 class MaterialParams:
-    """Contact material properties (THEORY.md section 7).
+    """Contact material properties (THEORY.md §7).
 
     When `stiffness` is known, penetration depth becomes a calibrated force gauge
     (lambda = stiffness * penetration), which is what makes contact force observable.
@@ -141,12 +141,12 @@ class MaterialParams:
     stiffness: float | None = None    # N/m
     damping: float = 0.0              # N/(m/s)
     friction: float = 0.6             # Coulomb coefficient
-    slip_speed_threshold: float = 0.02  # m/s, tangential speed above which a contact is deemed sliding (stick/slip, s.7)
+    slip_speed_threshold: float = 0.02  # m/s, tangential speed above which a contact is deemed sliding (stick/slip, §7)
 
 
 @dataclass
 class CalibrationParams:
-    """EM self-calibration of the resting-gap bias (THEORY.md sections 7 & 8)."""
+    """EM self-calibration of the resting-gap bias (THEORY.md §7 & §8)."""
 
     max_resting_bias: float = 0.01  # clip the estimated gap offset to +/- this (m)
     em_iters: int = 8
@@ -154,7 +154,7 @@ class CalibrationParams:
 
 @dataclass
 class GraphParams:
-    """Multi-body contact-graph / active-set inference (THEORY.md section 8)."""
+    """Multi-body contact-graph / active-set inference (THEORY.md §8)."""
 
     proximity_gap: float = 0.05        # m, broad-phase: propose an edge only within this gap
     active_set_dwell_time: float = 0.20  # s, temporal prior on the active-set sequence
@@ -164,7 +164,7 @@ class GraphParams:
 
 @dataclass
 class InferenceParams:
-    """Research-frontier inference knobs (THEORY.md sections 8 & 10).
+    """Research-frontier inference knobs (THEORY.md §8 & §10).
 
     * Structure posterior: exact 2^E enumeration up to `enumerate_max_edges`, a
       Rao-Blackwellized particle filter over the active-set sequence beyond that.
@@ -184,7 +184,7 @@ class InferenceParams:
 
 @dataclass
 class InverseDynamicsParams:
-    """Contact-implicit inverse dynamics — the THEORY.md s.8 "north star".
+    """Contact-implicit inverse dynamics — the THEORY.md §8 "north star".
 
     Explain the OBSERVED motion of a body of known mass/inertia with physically valid
     contact forces, subject to the Signorini complementarity (force only where the gap

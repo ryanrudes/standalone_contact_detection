@@ -26,7 +26,7 @@ from oracle import factory, registry
 from contact.config import DetectorConfig
 from contact.geometry import observe
 from contact.graph import detect_scene
-from contact.model import ContactDetector
+from contact.detector import ContactDetector
 from contact.types import (
     FREE,
     IMPACT,
@@ -398,8 +398,8 @@ def render_scene_frames(name, seed=0, hz=100.0, width=640, height=640,
 # --------------------------------------------------------------------------------------
 
 def _feature_rows(obs, normal_force=None):
-    """The raw per-frame feature channels the detector consumes (THEORY.md s.3), as
-    (label, array) rows for the feature heatmap. Force is appended when known (s.7)."""
+    """The raw per-frame feature channels the detector consumes (THEORY.md §3), as
+    (label, array) rows for the feature heatmap. Force is appended when known (§7)."""
     rows = [
         ("gap", np.asarray(obs.gap, float)),
         ("|v$_n$|", np.abs(obs.v_normal)),
@@ -520,13 +520,13 @@ def _build_animation(t, frames, feature_rows, state_post, state_labels, contact_
                           path_effects=None)
 
     axes = []
-    # --- feature heatmap: every raw channel the detector consumes (THEORY.md s.3) ---
+    # --- feature heatmap: every raw channel the detector consumes (THEORY.md §3) ---
     ax_f = fig.add_subplot(gs[0, 1])
     _heatmap_panel(ax_f, feat_mat, feat_labels, "magma", t0, t1, "features")
     ax_f.set_title(title, fontsize=11, loc="left")
     axes.append(ax_f)
 
-    # --- state-posterior heatmap: the model's full belief over modes (THEORY.md s.4/s.5) ---
+    # --- state-posterior heatmap: the model's full belief over modes (THEORY.md §4/§5) ---
     ax_s = fig.add_subplot(gs[1, 1], sharex=ax_f)
     _heatmap_panel(ax_s, state_post.T, state_labels, "viridis", t0, t1, "P(state)")
     axes.append(ax_s)
@@ -950,7 +950,7 @@ def _pair_spec(name, seed, hz, config, use_force=False):
     ``use_force`` feeds the per-edge FORCE channel (DESIGN.md PART II.A) using the simulator's
     true normal force as a stand-in for a real force sensor -- so force-mediated contacts that
     are invisible to kinematics (the Newton's-cradle clacks: ~0 relative velocity but a sharp
-    force pulse, THEORY.md s.6-s.8) light up as IMPACT in the detection panels. A real sensor
+    force pulse, THEORY.md §6-§8) light up as IMPACT in the detection panels. A real sensor
     would supply the same stream; the truth force is used here only as the demonstration source.
     """
     import dataclasses

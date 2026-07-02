@@ -3,10 +3,10 @@
 These tests exercise the *leaf* building blocks of the detector in isolation, one
 module per section, against hand-computed expectations:
 
-* ``contact.hmm``       -- log-space HMM primitives (THEORY.md section 5).
-* ``contact.emissions`` -- per-state emission log-likelihoods (THEORY.md sections 3 & 4).
-* ``contact.geometry``  -- poses -> support-relative observations (THEORY.md sections 1 & 3).
-* ``contact.signals``   -- time-aware differentiation (THEORY.md sections 4 & 6).
+* ``contact.hmm``       -- log-space HMM primitives (THEORY.md §5).
+* ``contact.emissions`` -- per-state emission log-likelihoods (THEORY.md §3 & §4).
+* ``contact.geometry``  -- poses -> support-relative observations (THEORY.md §1 & §3).
+* ``contact.signals``   -- time-aware differentiation (THEORY.md §4 & §6).
 
 The emphasis is on *qualitative discrimination that must hold by construction* (e.g.
 the right mode wins on a synthetic frame engineered to match that mode's twist
@@ -88,7 +88,7 @@ def _single_frame_obs(
 
 
 # ======================================================================================
-# contact.hmm  (THEORY.md section 5)
+# contact.hmm  (THEORY.md §5)
 # ======================================================================================
 
 
@@ -144,7 +144,7 @@ class TestForwardBackward:
 
     def test_recovers_obvious_segmentation(self) -> None:
         """On a 2-state chain with state-separating emissions, gamma & Viterbi recover the
-        obvious half/half segmentation (THEORY.md section 5: persistence + evidence)."""
+        obvious half/half segmentation (THEORY.md §5: persistence + evidence)."""
         T = 40
         S = 2
         # First half strongly favours state 0, second half strongly favours state 1.
@@ -171,7 +171,7 @@ class TestForwardBackward:
 
     def test_time_varying_transitions_accepted(self) -> None:
         """Time-varying (T, S, S) transitions are accepted and still yield valid posteriors
-        (THEORY.md section 5: state-dependent guards => time-varying transition prior)."""
+        (THEORY.md §5: state-dependent guards => time-varying transition prior)."""
         T, S = 15, 2
         rng = np.random.default_rng(2)
         log_emission = rng.normal(size=(T, S))
@@ -195,7 +195,7 @@ class TestForwardBackward:
 
 
 # ======================================================================================
-# contact.emissions  (THEORY.md sections 3 & 4)
+# contact.emissions  (THEORY.md §3 & §4)
 # ======================================================================================
 
 
@@ -223,7 +223,7 @@ class TestEmissions:
 
     def test_static_wins_on_resting_frame(self) -> None:
         """A resting frame (gap ~ bias, ~0 velocity, ~0 angular rate) is best explained by
-        STATIC (THEORY.md section 3: the whole twist is pinned to ~0)."""
+        STATIC (THEORY.md §3: the whole twist is pinned to ~0)."""
         p = self._params()
         gap_bias = 0.001
         obs = _single_frame_obs(
@@ -242,7 +242,7 @@ class TestEmissions:
 
     def test_free_wins_on_high_clearance_fast_frame(self) -> None:
         """A frame high above the surface and moving fast must favour FREE (diffuse on
-        every channel; THEORY.md section 4 -- nothing is pinned)."""
+        every channel; THEORY.md §4 -- nothing is pinned)."""
         p = self._params()
         gap_bias = 0.0
         obs = _single_frame_obs(
@@ -261,7 +261,7 @@ class TestEmissions:
 
     def test_sliding_beats_static_with_large_tangential_speed(self) -> None:
         """When |v_tangent| is large (near slide_speed) but the gap is at the bias and there
-        is no spin, SLIDING must out-score STATIC (THEORY.md section 3: sliding subspace)."""
+        is no spin, SLIDING must out-score STATIC (THEORY.md §3: sliding subspace)."""
         p = self._params()
         gap_bias = 0.0
         obs = _single_frame_obs(
@@ -281,7 +281,7 @@ class TestEmissions:
 
     def test_rolling_beats_sliding_on_coupled_frame(self) -> None:
         """When |v_tangent| ~ roll_radius * |omega_tangent| (the rolling constraint of
-        THEORY.md section 3), ROLLING must beat SLIDING -- the defining cross-channel
+        THEORY.md §3), ROLLING must beat SLIDING -- the defining cross-channel
         correlation that a per-channel model cannot represent."""
         p = self._params()
         gap_bias = 0.0
@@ -304,7 +304,7 @@ class TestEmissions:
 
     def test_pivoting_beats_static_on_spin(self) -> None:
         """A pure spin about the normal (large omega_normal, everything else ~0) favours
-        PIVOTING over STATIC (THEORY.md section 3: normal-angular subspace)."""
+        PIVOTING over STATIC (THEORY.md §3: normal-angular subspace)."""
         p = self._params()
         gap_bias = 0.0
         obs = _single_frame_obs(
@@ -324,7 +324,7 @@ class TestEmissions:
 
 
 # ======================================================================================
-# contact.geometry  (THEORY.md sections 1 & 3)
+# contact.geometry  (THEORY.md §1 & §3)
 # ======================================================================================
 
 
@@ -333,7 +333,7 @@ class TestGeometryGap:
         """gap == signed distance to the plane, computed by hand for a static floor.
 
         Floor at z=0 with outward normal +z; the contact point rides at a constant
-        height, so every frame's gap must equal that height (THEORY.md section 1)."""
+        height, so every frame's gap must equal that height (THEORY.md §1)."""
         T = 10
         t = np.linspace(0.0, 1.0, T)
         height = 0.123
@@ -374,7 +374,7 @@ class TestGeometryGap:
     def test_rigid_ride_on_translating_support_has_zero_relative_motion(self) -> None:
         """A body rigidly riding a fast-translating support reads |v_tangent| ~ |v_normal| ~ 0.
 
-        THEORY.md section 1: contact is support-RELATIVE. The foot-on-skateboard case --
+        THEORY.md §1: contact is support-RELATIVE. The foot-on-skateboard case --
         both bodies scream across the world, yet the relative twist is ~0."""
         T = 60
         t = np.linspace(0.0, 1.0, T)
@@ -404,7 +404,7 @@ class TestGeometryGap:
     def test_spin_about_normal_gives_omega_normal_dominant(self) -> None:
         """A body spinning about the surface normal yields |omega_normal| >> |omega_tangent|.
 
-        THEORY.md section 3: spin about the normal is the pivoting channel; the tangential
+        THEORY.md §3: spin about the normal is the pivoting channel; the tangential
         angular channels (the rolling axis) must stay ~0."""
         T = 80
         t = np.linspace(0.0, 1.0, T)
@@ -434,7 +434,7 @@ class TestGeometryGap:
 
 
 # ======================================================================================
-# contact.signals  (THEORY.md sections 4 & 6)
+# contact.signals  (THEORY.md §4 & §6)
 # ======================================================================================
 
 

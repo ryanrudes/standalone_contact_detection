@@ -27,7 +27,7 @@ from oracle.specs import EdgeSpec, SceneSpec
 # the person is a tall box PROXY (we document below that this is a contact-detection test,
 # NOT human dynamics). Four hinge-jointed cylinder wheels make the board<->ground contact
 # genuinely ROLLING (the wheels spin freely about the board's lateral axis), so the scene
-# exercises s.3's rolling mode on one edge while the other edge is static.
+# exercises §3's rolling mode on one edge while the other edge is static.
 _DECK_HALF = np.array([0.35, 0.12, 0.015])  # deck half-extents (m)
 _DECK_LIFT = 0.045                           # deck center height above the board origin (m)
 _WHEEL_R = 0.04                              # wheel radius (m)
@@ -39,7 +39,7 @@ _PERSON_HALF = np.array([0.08, 0.08, 0.28])  # person-proxy box half-extents (m)
 
 @scene("person_on_skateboard")
 def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
-    """A person PROXY rides a wheeled board that rolls across the ground (THEORY.md s.1/s.8).
+    """A person PROXY rides a wheeled board that rolls across the ground (THEORY.md §1/§8).
 
     Bodies: ``person`` (a tall BOX PROXY -- this is a contact-detection test, NOT human
     dynamics; the box stands in for a foot/leg planted on the deck) and ``board`` (a thin
@@ -47,10 +47,10 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
     for all t). The board is launched with a !actuated initial horizontal velocity along
     +x; the freely-spinning wheels make it ROLL, and friction carries the person along.
 
-    Two candidate edges (THEORY.md s.8 contact graph):
+    Two candidate edges (THEORY.md §8 contact graph):
 
     * ``person_board`` : moving = person, support = board, surface = the deck TOP face in
-      the BOARD-local frame. THE KEY POINT (THEORY.md s.1): this is a STATIC contact even
+      the BOARD-local frame. THE KEY POINT (THEORY.md §1): this is a STATIC contact even
       though both the person and the board have a large WORLD velocity -- their *relative*
       twist is ~0. A world-frame "speed" test would wrongly call it "moving, not in
       contact"; the support-relative frame is the whole payoff.
@@ -62,7 +62,7 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
       point slips over the ground at the board's travel speed), and its truth mode is
       classified from the board too (``truth_mode_body="board"``) so truth and observation
       agree. The wheels' instantaneous near-zero slip (true ROLLING of the wheel material
-      point) is a separate, un-tracked fact -- THEORY.md s.3: rolling vs sliding depends on
+      point) is a separate, un-tracked fact -- THEORY.md §3: rolling vs sliding depends on
       which material point you follow.
 
     Per-edge truth is harvested from the relevant geom pairs: person_board from
@@ -150,7 +150,7 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
                 support_body="board",
                 moving_geoms=("persong",),
                 support_geoms=("deckg",),
-                # Surface = deck TOP face, in the BOARD-local frame (s.8: the surface is
+                # Surface = deck TOP face, in the BOARD-local frame (§8: the surface is
                 # carried by the support body, which itself moves).
                 surface_point_local=np.array([0.0, 0.0, deck_top_local]),
                 surface_normal_local=np.array([0.0, 0.0, 1.0]),
@@ -177,7 +177,7 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
                 # recorded for this edge), tracking the board-fixed point above. A board-fixed
                 # point does not spin with the wheels -- it translates with the deck at the
                 # board's travel speed -- so what the detector sees is SLIDING, not rolling
-                # (THEORY.md s.3: rolling vs sliding is a property of the tracked material
+                # (THEORY.md §3: rolling vs sliding is a property of the tracked material
                 # point). We therefore (a) classify the truth mode from the BOARD body too
                 # (truth_mode_body), so truth and observation describe the same point and
                 # agree, and (b) hint shape="box" so the truth mode is classified as
@@ -191,7 +191,7 @@ def _build_person_on_skateboard() -> tuple[mujoco.MjModel, dict]:
 
 @scene("box_on_two_blocks")
 def _build_box_on_two_blocks() -> tuple[mujoco.MjModel, dict]:
-    """A box bridges two separated blocks; one support is removed mid-run (THEORY.md s.8).
+    """A box bridges two separated blocks; one support is removed mid-run (THEORY.md §8).
 
     Bodies: ``box`` (a long thin plank), ``blockL`` (a fixed wide support), ``blockR`` (a
     support on a vertical slide joint, driven DOWN partway through). The box's center of
@@ -204,7 +204,7 @@ def _build_box_on_two_blocks() -> tuple[mujoco.MjModel, dict]:
     * ``box_blockR`` : box <-> blockR -- active at first, then DEACTIVATES when blockR is
       lowered out of reach.
 
-    This is the changing-active-set test of THEORY.md s.8: the true active structure is
+    This is the changing-active-set test of THEORY.md §8: the true active structure is
     ``{box_blockL, box_blockR}`` early and ``{box_blockL}`` after blockR drops. The box
     never tips (blockL is wide enough to hold it level with the CoM over it), so the
     box_blockL edge is a clean sustained STATIC contact throughout while box_blockR's
@@ -241,7 +241,7 @@ def _build_box_on_two_blocks() -> tuple[mujoco.MjModel, dict]:
          world z=0 (origin z=block_half, half-height=block_half), so if it collided
          with the floor it could only descend ~contact-compliance (sub-mm) and the
          scene's advertised both-supports to blockL-only change would have NO
-         kinematic trace (force drops but the bodies never separate -- the s.7
+         kinematic trace (force drops but the bodies never separate -- the §7
          observability trap). With blockR free of the floor it drops the full commanded
          distance into the well below, opening a ~0.30 m gap the detector can see. -->
     <geom name="floor" type="plane" size="10 10 0.1" pos="0 0 0" friction="1.0 0.01 0.001"

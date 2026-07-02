@@ -1,10 +1,10 @@
-"""Complex multi-body SCENES with body-to-body collisions / chained impacts (THEORY.md s.8/s.9).
+"""Complex multi-body SCENES with body-to-body collisions / chained impacts (THEORY.md §8/§9).
 
 These scenes go beyond a single body resting on a static floor: their interesting
 edges are *body-to-body* contacts that flicker between FREE and IMPACT as momentum is
-exchanged through a chain (THEORY.md s.6: an impact is a force *atom*, a velocity
+exchanged through a chain (THEORY.md §6: an impact is a force *atom*, a velocity
 reset map ``v+ = -e*v-``, and these scenes are where those atoms propagate). The
-contact graph (THEORY.md s.8) here has edges that share moving bodies, and the
+contact graph (THEORY.md §8) here has edges that share moving bodies, and the
 true active set changes as collisions happen.
 
 Three scenes:
@@ -19,7 +19,7 @@ Three scenes:
   lifted and released to strike the line, momentum passing through to the far ball.
   The adjacent ball<->ball edges carry the propagating impacts.
 
-SELF-CONTAINMENT (THEORY.md s.9 / the builder contract): this module imports ONLY
+SELF-CONTAINMENT (THEORY.md §9 / the builder contract): this module imports ONLY
 ``mujoco``, ``numpy``, and ``contact.types``. It defines its own tiny ``<option>`` /
 name->id helpers from the ``oracle._mjcf`` leaf and registers via ``oracle.registry.scene``
 (a leaf that imports nothing, so there is no
@@ -60,11 +60,11 @@ _BALL_R = 0.05          # sphere radius (m) for the two-balls scene
 def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
     """Two spheres on the floor; ball A is sent into ball B and exchanges momentum.
 
-    Physics (THEORY.md s.3 + s.6). Ball A is launched toward +x (a brisk forward shove on a
+    Physics (THEORY.md §3 + §6). Ball A is launched toward +x (a brisk forward shove on a
     HIGH-friction floor, so it spins up into rolling almost immediately) at ball B, which is
     resting one ball-diameter ahead. The collision is a clean central IMPACT on the
     ball<->ball edge: a near-discontinuous reset of the relative NORMAL velocity along the
-    line of centers (s.6). With equal masses and a head-on hit, momentum is exchanged -- A
+    line of centers (§6). With equal masses and a head-on hit, momentum is exchanged -- A
     slows sharply and B is shot forward, then B rolls away. Both floor edges are ROLLING when
     their ball is moving.
 
@@ -95,14 +95,14 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
        truth labels several IMPACT frames AND the HMM persistence prior can confirm the contact
        (a non-degenerate, non-zero-IoU edge).
 
-    Three candidate edges (THEORY.md s.8 contact graph):
+    Three candidate edges (THEORY.md §8 contact graph):
 
     * ``ballA_floor`` : ballA <-> floor (ROLLING while A moves).
     * ``ballB_floor`` : ballB <-> floor (ROLLING after the strike sends B off).
     * ``ballA_ballB`` : ballA <-> ballB (FREE -> transient IMPACT at the collision -> FREE).
 
     The MuJoCo truth labels are geom-based and independent of that observable surface
-    (THEORY.md s.9).
+    (THEORY.md §9).
     """
     gap = 0.35  # initial center-to-center gap along +x (m); A starts at the origin. Long
                 # enough that the detector sees a clear multi-frame FREE approach before the
@@ -220,7 +220,7 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
         meta={
             "story": (
                 "Ball A is sent into a resting ball B; equal-mass central impact exchanges "
-                "momentum (THEORY.md s.6). Floor edges ROLLING; ball-ball edge a clean "
+                "momentum (THEORY.md §6). Floor edges ROLLING; ball-ball edge a clean "
                 "transient IMPACT."
             ),
         },
@@ -240,7 +240,7 @@ _N_DOM = 4                                  # number of dominoes (4 => the casca
 def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     """A row of upright thin boxes; the first is shoved and topples into the next.
 
-    Physics (THEORY.md s.6, chained impacts). Each domino is a tall thin box standing on
+    Physics (THEORY.md §6, chained impacts). Each domino is a tall thin box standing on
     the floor. The first is given an initial +x angular velocity (a shove about its
     bottom edge); it topples, its top strikes domino 2, knocking it past its balance
     point, and the cascade propagates. The spacing ``_DOM_GAP`` is set smaller than a
@@ -248,7 +248,7 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     cascade condition), and 4 dominoes keep the chain short enough to complete cleanly
     within the window.
 
-    Edges (THEORY.md s.8): one ``domI_floor`` edge per domino (its bottom-face contact
+    Edges (THEORY.md §8): one ``domI_floor`` edge per domino (its bottom-face contact
     with the ground). While standing it is STATIC; as it topples its bottom edge pivots
     and the toppling/landing produces IMPACT transients. We also expose the adjacent
     ``domI_domJ`` strike edges (box-on-box) so the propagating collision shows up as a
@@ -256,7 +256,7 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
 
     The tracked material point for each floor edge is the domino's bottom-face center;
     its observable gap stays ~0 while standing and lifts as the domino rotates off its
-    base (the s.1 support-relative gap). The truth labels are geom-based (THEORY.md s.9).
+    base (the §1 support-relative gap). The truth labels are geom-based (THEORY.md §9).
     """
     hx, hy, hz = _DOM_HALF
     bodies = [f"dom{i}" for i in range(_N_DOM)]
@@ -343,7 +343,7 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
         edges=tuple(edges),
         meta={
             "story": (
-                "%d-domino cascade (THEORY.md s.6): the first is shoved and topples into "
+                "%d-domino cascade (THEORY.md §6): the first is shoved and topples into "
                 "the next, a chain of impacts/topples propagating along the row." % _N_DOM
             ),
         },
@@ -366,7 +366,7 @@ _NC_LIFT = 0.55         # angle (rad ~31 deg) the end ball is lifted to, then RE
 
 @scene("newtons_cradle")
 def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
-    """A real SUSPENDED Newton's cradle (THEORY.md s.6: impacts propagating through a line).
+    """A real SUSPENDED Newton's cradle (THEORY.md §6: impacts propagating through a line).
 
     Physics. N equal balls hang from a fixed top bar on hinge pendulums, in a line with a
     hair of clearance between neighbours. The end ball is LIFTED to a modest angle and
@@ -387,10 +387,10 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
       (``solref="0.012 0.15"``) transfers momentum cleanly, and ``record_hz = 400`` samples
       each brief strike across several frames.
 
-    Edges (THEORY.md s.8): the adjacent ball<->ball contacts ``b{i}_b{i+1}``; each tracks the
+    Edges (THEORY.md §8): the adjacent ball<->ball contacts ``b{i}_b{i+1}``; each tracks the
     moving ball's (rotation-invariant) CENTER against a plane 2R inboard of the support ball's
     centre (the balls are near-vertical at each central strike, so that pole aligns). Truth
-    labels are geom-based (THEORY.md s.9).
+    labels are geom-based (THEORY.md §9).
     """
     R = _NC_R
     spacing = 2.0 * R + _NC_GAP
@@ -479,7 +479,7 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
         edges=tuple(edges),
         meta={
             "story": (
-                "%d-ball Newton's cradle (THEORY.md s.6): the end ball is lifted and released "
+                "%d-ball Newton's cradle (THEORY.md §6): the end ball is lifted and released "
                 "FROM REST; it swings down, strikes the suspended line, and the impulse "
                 "propagates ball-to-ball so the FAR ball swings out while the middle stays put."
                 % _NC_N

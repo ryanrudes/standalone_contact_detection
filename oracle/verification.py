@@ -21,7 +21,7 @@ import numpy as np
 from oracle import factory
 from oracle.registry import SCENARIO_BUILDERS, SCENE_BUILDERS
 from contact.geometry import observe
-from contact.model import ContactDetector
+from contact.detector import ContactDetector
 from contact.graph import detect_scene
 from contact.types import FREE
 

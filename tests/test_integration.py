@@ -1,7 +1,7 @@
-"""End-to-end validation of the detector against MuJoCo ground truth (THEORY.md s.9).
+"""End-to-end validation of the detector against MuJoCo ground truth (THEORY.md §9).
 
-This is the top rung of the pragmatic ladder (THEORY.md s.10) exercised as a whole:
-for each scenario we run the *exact* workflow of THEORY.md s.9 ---
+This is the top rung of the pragmatic ladder (THEORY.md §10) exercised as a whole:
+for each scenario we run the *exact* workflow of THEORY.md §9 ---
 
     oracle.generate  ->  geometry.observe  ->  ContactDetector().detect  ->  report.score
 
@@ -9,11 +9,11 @@ for each scenario we run the *exact* workflow of THEORY.md s.9 ---
 inferred posterior against the *withheld* simulator truth. Each scenario asserts the
 specific theoretical claim it was built to stress:
 
-* ``drop_rest``          existence + a single touchdown impact (s.2, s.6).
-* ``drop_rest_liftoff``  both make/break guards: free->contact and contact->free (s.5).
-* ``push_to_slide``      the stick->slip friction-cone guard: static then sliding (s.7).
-* ``rolling_ball``       the curved rolling twist-subspace mode (s.3).
-* ``moving_support``     contact is *relative*, not world-frame (s.1) --- the payoff.
+* ``drop_rest``          existence + a single touchdown impact (§2, §6).
+* ``drop_rest_liftoff``  both make/break guards: free->contact and contact->free (§5).
+* ``push_to_slide``      the stick->slip friction-cone guard: static then sliding (§7).
+* ``rolling_ball``       the curved rolling twist-subspace mode (§3).
+* ``moving_support``     contact is *relative*, not world-frame (§1) --- the payoff.
 
 The thresholds below were calibrated against the actual implementation at this seed
 (SEED) and rate; where a "clean" theoretical bound would be too strict for a kinematic
@@ -39,14 +39,14 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 # The simulator is the only hard external dependency of this suite. Skip cleanly if
-# absent rather than erroring (THEORY.md s.9: the simulator is the truth oracle, but the
+# absent rather than erroring (THEORY.md §9: the simulator is the truth oracle, but the
 # detector core does not itself depend on it).
 mujoco = pytest.importorskip("mujoco")
 
 from contact import geometry
 import oracle
 from oracle import report
-from contact.model import ContactDetector
+from contact.detector import ContactDetector
 from contact.types import ROLLING, SLIDING, STATIC
 
 # A single fixed seed for every scenario so the whole suite is reproducible (the seed
@@ -61,10 +61,10 @@ SEED = 12345
 
 
 def _run(name: str):
-    """Run the full s.9 pipeline for one scenario and return (raw, obs, result, scores).
+    """Run the full §9 pipeline for one scenario and return (raw, obs, result, scores).
 
-    THEORY.md s.9: generate (clean physics + withheld truth, noisy poses) -> observe
-    (support-relative twist, s.1/s.3) -> detect (the HMM estimator, s.4-8) -> score
+    THEORY.md §9: generate (clean physics + withheld truth, noisy poses) -> observe
+    (support-relative twist, §1/§3) -> detect (the HMM estimator, §4-8) -> score
     (against the withheld truth). This is exactly the chain every test below shares.
     """
     raw = oracle.generate(name, seed=SEED)
@@ -87,7 +87,7 @@ def _true_first_contact_time(truth) -> float:
 def _map_runs(result, label: str) -> list[tuple[float, float]]:
     """Contiguous (t_start, t_end) runs of the MAP path equal to ``label``.
 
-    THEORY.md s.5: the Viterbi MAP path is already temporally coherent. A *mode* segment
+    THEORY.md §5: the Viterbi MAP path is already temporally coherent. A *mode* segment
     is a maximal run of that path in one mode. We read these directly off ``map_state``
     rather than off ``DetectionResult.intervals`` because the latter splits only on FREE
     (so a static->sliding transition mid-contact lives inside ONE interval whose
@@ -114,7 +114,7 @@ def _map_runs(result, label: str) -> list[tuple[float, float]]:
 def _frac_mode_on_true_contact(result, truth, label: str) -> float:
     """Fraction of *truly-in-contact* frames whose MAP mode equals ``label``.
 
-    THEORY.md s.3: a mode is the twist-subspace the motion lives in; this asks how often
+    THEORY.md §3: a mode is the twist-subspace the motion lives in; this asks how often
     the detector recovered that subspace, restricted (like ``report.score``'s
     ``mode_accuracy``) to frames the simulator says are truly in contact.
     """
@@ -128,7 +128,7 @@ def _frac_mode_on_true_contact(result, truth, label: str) -> float:
 
 
 # --------------------------------------------------------------------------------------
-# drop_rest: existence + a single touchdown near the true landing (THEORY.md s.2, s.6)
+# drop_rest: existence + a single touchdown near the true landing (THEORY.md §2, §6)
 # --------------------------------------------------------------------------------------
 
 
@@ -136,24 +136,24 @@ def test_drop_rest():
     """Box free-falls onto a static plane and rests.
 
     Asserts contact existence is recovered well (high IoU) and that a touchdown event is
-    pinned near the true landing instant (THEORY.md s.6: the deceleration spike at
+    pinned near the true landing instant (THEORY.md §6: the deceleration spike at
     touchdown is the gold-standard event timer).
     """
     raw, obs, result, scores = _run("drop_rest")
 
-    # Existence: the active set of s.2 is recovered with strong overlap. The spec bound
+    # Existence: the active set of §2 is recovered with strong overlap. The spec bound
     # is 0.70; the implementation comfortably exceeds it (~0.96 at this seed). The small
     # shortfall from 1.0 is the few-frame onset lag inherent to a smoothing detector
-    # (s.6: confirming a landing uses the frames AFTER it).
+    # (§6: confirming a landing uses the frames AFTER it).
     assert scores["contact_iou"] > 0.7
 
-    # A touchdown event must exist (free->contact make guard, s.6).
+    # A touchdown event must exist (free->contact make guard, §6).
     touchdowns = [e for e in result.events if e.kind == "touchdown"]
     assert len(touchdowns) >= 1, "expected at least one touchdown event"
 
     # The detected touchdown lands near the true first-contact instant. Tolerance is
     # 50 ms: the detector's onset is intrinsically a hair late (it confirms landing from
-    # subsequent rest, s.6) and the gap channel is built from noise + 100 Hz sampling.
+    # subsequent rest, §6) and the gap channel is built from noise + 100 Hz sampling.
     true_td = _true_first_contact_time(raw.truth)
     nearest = min(touchdowns, key=lambda e: abs(e.time - true_td))
     assert abs(nearest.time - true_td) < 0.05, (
@@ -162,14 +162,14 @@ def test_drop_rest():
 
 
 # --------------------------------------------------------------------------------------
-# drop_rest_liftoff: BOTH guards of the hybrid system (THEORY.md s.5)
+# drop_rest_liftoff: BOTH guards of the hybrid system (THEORY.md §5)
 # --------------------------------------------------------------------------------------
 
 
 def test_drop_rest_liftoff():
     """Box drops, rests, then is peeled back off by an applied force.
 
-    Asserts the full make/break cycle of THEORY.md s.5: free->contact (gap reaches 0)
+    Asserts the full make/break cycle of THEORY.md §5: free->contact (gap reaches 0)
     AND contact->free (normal force reaches 0), realised as exactly one sustained
     contact interval bracketed by a touchdown then a liftoff.
     """
@@ -179,7 +179,7 @@ def test_drop_rest_liftoff():
     # ~0.87 here -- lower than drop_rest because both ends now cost onset/offset lag).
     assert scores["contact_iou"] > 0.7
 
-    # Exactly one *main* contact interval. The Viterbi segmentation (s.5) replaces the
+    # Exactly one *main* contact interval. The Viterbi segmentation (§5) replaces the
     # toy script's morphological cleanup, so the single sustained touch is one run -- not
     # a flickering string. We allow at most one tiny spurious blip by taking the longest
     # interval as "main" and requiring the rest (if any) to be negligibly short.
@@ -193,14 +193,14 @@ def test_drop_rest_liftoff():
         f"expected one dominant interval; got durations {durations}"
     )
 
-    # Both event kinds present (the two guards of s.5).
+    # Both event kinds present (the two guards of §5).
     touchdowns = [e for e in result.events if e.kind == "touchdown"]
     liftoffs = [e for e in result.events if e.kind == "liftoff"]
     assert len(touchdowns) >= 1, "expected a touchdown (free->contact guard)"
     assert len(liftoffs) >= 1, "expected a liftoff (contact->free guard)"
 
     # Causality: the (last) liftoff must come after the (first) touchdown -- you cannot
-    # break a contact you never made (s.5/s.6 guard ordering).
+    # break a contact you never made (§5/§6 guard ordering).
     first_td = min(e.time for e in touchdowns)
     last_lo = max(e.time for e in liftoffs)
     assert last_lo > first_td, (
@@ -209,14 +209,14 @@ def test_drop_rest_liftoff():
 
 
 # --------------------------------------------------------------------------------------
-# push_to_slide: the stick->slip friction-cone guard (THEORY.md s.7)
+# push_to_slide: the stick->slip friction-cone guard (THEORY.md §7)
 # --------------------------------------------------------------------------------------
 
 
 def test_push_to_slide():
     """Box rests, then a ramped push breaks friction and it slides.
 
-    Asserts the stick->slip guard of THEORY.md s.7: an early STATIC resting phase
+    Asserts the stick->slip guard of THEORY.md §7: an early STATIC resting phase
     (tangential force inside the friction cone) followed by a SLIDING phase once the push
     reaches the cone boundary -- i.e. the detector recovers a sliding segment and labels
     the early rest static.
@@ -236,7 +236,7 @@ def test_push_to_slide():
     assert scores["mode_accuracy"] > 0.5
 
     # The early resting phase (before the push starts ramping at t=0.3 s) is labeled
-    # STATIC: while sticking, the relative twist is ~0 (s.3/s.7). We check every
+    # STATIC: while sticking, the relative twist is ~0 (§3/§7). We check every
     # truly-in-contact frame in that window is MAP-static.
     t = np.asarray(result.t, dtype=float)
     true_mask = np.asarray(raw.truth.in_contact, dtype=bool)
@@ -257,7 +257,7 @@ def test_push_to_slide():
 
 
 # --------------------------------------------------------------------------------------
-# rolling_ball: the curved rolling twist-subspace mode (THEORY.md s.3)
+# rolling_ball: the curved rolling twist-subspace mode (THEORY.md §3)
 # --------------------------------------------------------------------------------------
 
 
@@ -265,7 +265,7 @@ def test_rolling_ball():
     """Sphere rolling without slip across a plane.
 
     Asserts ROLLING is recovered as a present mode for a meaningful fraction of the
-    truly-in-contact frames. THEORY.md s.3 stresses that rolling is the HARD mode --- it
+    truly-in-contact frames. THEORY.md §3 stresses that rolling is the HARD mode --- it
     is a *curved* constraint manifold (v coupled to omega by v = omega x r), so a
     detector can easily confuse it with sliding or static. We therefore assert it is
     *present*, not that it dominates every frame everywhere.
@@ -286,7 +286,7 @@ def test_rolling_ball():
     roll_frac = _frac_mode_on_true_contact(result, raw.truth, ROLLING)
     assert roll_frac > 0.30, (
         f"rolling present on only {roll_frac:.2%} of contact frames "
-        f"(meaningful floor 30%); rolling is the hard curved-manifold mode of s.3"
+        f"(meaningful floor 30%); rolling is the hard curved-manifold mode of §3"
     )
 
     # And it should appear as an actual contiguous segment, not scattered single frames.
@@ -295,14 +295,14 @@ def test_rolling_ball():
 
 
 # --------------------------------------------------------------------------------------
-# moving_support: contact is RELATIVE, not world-frame (THEORY.md s.1) -- the payoff
+# moving_support: contact is RELATIVE, not world-frame (THEORY.md §1) -- the payoff
 # --------------------------------------------------------------------------------------
 
 
 def test_moving_support():
     """Box riding a sliding cart: large WORLD velocity, ~0 RELATIVE velocity.
 
-    This is the central payoff of THEORY.md s.1: the box has a large world-frame velocity
+    This is the central payoff of THEORY.md §1: the box has a large world-frame velocity
     (the cart drives it to x=1.5 m), yet the box-on-cart contact is unambiguously STATIC
     because the relative twist is ~0. A world-frame detector would call the moving box
     "not in contact"; measuring support-relative (geometry.observe carries the cart's
@@ -325,13 +325,13 @@ def test_moving_support():
 
     # The relative-frame payoff: existence recovered with high overlap despite that
     # world motion (spec bound 0.7; ~0.99 here because the support-relative twist is
-    # genuinely ~0 throughout). THEORY.md s.1.
+    # genuinely ~0 throughout). THEORY.md §1.
     assert scores["contact_iou"] > 0.7
 
     # And the recovered mode is STATIC for essentially the whole contact (relative twist
-    # ~0, s.3), not sliding -- the world velocity does NOT leak into the relative frame.
+    # ~0, §3), not sliding -- the world velocity does NOT leak into the relative frame.
     static_frac = _frac_mode_on_true_contact(result, raw.truth, STATIC)
     assert static_frac > 0.7, (
         f"only {static_frac:.2%} of contact frames labeled static; world velocity "
-        f"may be leaking into the relative frame (s.1 violated)"
+        f"may be leaking into the relative frame (§1 violated)"
     )

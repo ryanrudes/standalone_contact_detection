@@ -1,7 +1,7 @@
-"""Single-pair contact-detection demos showcasing varied contact MODES (THEORY.md s.9).
+"""Single-pair contact-detection demos showcasing varied contact MODES (THEORY.md §9).
 
 These are additional SCENARIO builders for the MuJoCo truth factory. Each one shapes the
-*physics* so a particular twist regime (THEORY.md s.3) dominates and the truth labeler
+*physics* so a particular twist regime (THEORY.md §3) dominates and the truth labeler
 (``oracle.factory._classify_mode``) reports the named mode:
 
 * ``incline_slide`` : a box on a TILTED plane slides downhill -> SLIDING, with a
@@ -62,7 +62,7 @@ _BOX_HALF = 0.10        # box half-extent (m); bottom-center material point is [
 def _build_incline_slide() -> tuple[mujoco.MjModel, dict]:
     """A box rests on a TILTED plane (~20 deg) and slides downhill under gravity.
 
-    Physics (THEORY.md s.3, the sliding mode, and s.1, the support-relative gap with a
+    Physics (THEORY.md §3, the sliding mode, and §1, the support-relative gap with a
     NON-vertical normal). The plane is tilted by angle ``theta`` about the +y axis, so its
     outward normal is ``n = (sin theta, 0, cos theta)`` -- NOT +z. Gravity's component
     along the incline is ``g sin theta``; the static-friction ceiling is ``mu g cos theta``.
@@ -163,7 +163,7 @@ def _build_incline_slide() -> tuple[mujoco.MjModel, dict]:
 def _build_skid_to_rest() -> tuple[mujoco.MjModel, dict]:
     """A box launched horizontally on a high-friction floor skids and decelerates to rest.
 
-    Physics (THEORY.md s.3): an initial COM velocity along +x with the box already seated on
+    Physics (THEORY.md §3): an initial COM velocity along +x with the box already seated on
     the floor. Kinetic friction ``mu m g`` decelerates it at constant ``a = mu g`` until the
     material contact point's tangential slip drops below the slip threshold -> the mode
     transitions SLIDING -> STATIC. We give it enough speed (2.5 m/s) and a high-ish mu (0.6)
@@ -215,7 +215,7 @@ def _build_skid_to_rest() -> tuple[mujoco.MjModel, dict]:
 def _build_spinning_top() -> tuple[mujoco.MjModel, dict]:
     """A top spun FAST about the vertical (= contact-normal) axis, staying in place.
 
-    Physics (THEORY.md s.3, the pivoting mode): pivoting is spin about the contact NORMAL
+    Physics (THEORY.md §3, the pivoting mode): pivoting is spin about the contact NORMAL
     with ~no tangential slip and ~no normal closing. The discriminator is the *material
     contact point*: PIVOTING needs that point's tangential slip to stay small
     (``slip_tan < _SLIP_EPS``) while the relative spin about the normal is large
@@ -307,7 +307,7 @@ def _build_spinning_top() -> tuple[mujoco.MjModel, dict]:
 def _build_tumbling_box() -> tuple[mujoco.MjModel, dict]:
     """A box thrown with linear + angular velocity tumbles across the floor then rests.
 
-    Physics (THEORY.md s.6, impacts as force atoms; s.3 modes). The box starts in the air
+    Physics (THEORY.md §6, impacts as force atoms; §3 modes). The box starts in the air
     and is launched with a forward+upward COM velocity and a spin about +y (the lateral axis,
     so it tumbles end-over-end in the x-z plane). Each time a corner/edge strikes the floor
     the relative normal velocity is arrested almost discontinuously -> an IMPACT atom;

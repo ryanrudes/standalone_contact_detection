@@ -1,19 +1,19 @@
-"""Tests for the impact (s.6) and dynamics/material (s.7) rungs of the ladder.
+"""Tests for the impact (§6) and dynamics/material (§7) rungs of the ladder.
 
-This suite exercises the two final rungs of THEORY.md s.10 against both *synthetic*
+This suite exercises the two final rungs of THEORY.md §10 against both *synthetic*
 signals (where the right answer is known in closed form) and the MuJoCo truth oracle
-of THEORY.md s.9 (where the simulator withholds the truth from the detector but not
+of THEORY.md §9 (where the simulator withholds the truth from the detector but not
 from us). Two distinct claims are stressed:
 
-* **s.6 -- impacts are atoms in the force measure.** ``impacts.detect_impacts`` must
+* **§6 -- impacts are atoms in the force measure.** ``impacts.detect_impacts`` must
   localize the velocity-step arrest (``v+ = -e v-``) and read back its closing speed,
   restitution, and impulse, while *not* hallucinating an impact on a smooth signal.
 
-* **s.7 -- compliance restores observability.** ``dynamics.normal_force_from_penetration``
+* **§7 -- compliance restores observability.** ``dynamics.normal_force_from_penetration``
   turns penetration into a calibrated force gauge ``lambda = k*delta`` (and reports the
   force as unobservable -- NaN -- when stiffness is unknown); ``dynamics.friction_stick_slip``
   reads the stick->slip guard off the kinematics; and ``dynamics.observability_demo``
-  exhibits the s.7 theorem itself: the rigid-statics load split is unobservable (the
+  exhibits the §7 theorem itself: the rigid-statics load split is unobservable (the
   equilibrium map has a nontrivial null space) yet compliance recovers each per-corner
   force from its own penetration.
 
@@ -51,7 +51,7 @@ HZ = 200.0
 def _flat_obs(t: np.ndarray, v_normal: np.ndarray) -> ContactObservations:
     """A minimal ContactObservations carrying only ``t`` and ``v_normal``.
 
-    ``detect_impacts`` consumes only those two channels (s.6: the normal channel
+    ``detect_impacts`` consumes only those two channels (§6: the normal channel
     carries the arrest), so the tangential/angular channels can be zeros here.
     """
     T = t.shape[0]
@@ -66,14 +66,14 @@ def _flat_obs(t: np.ndarray, v_normal: np.ndarray) -> ContactObservations:
 
 
 # --------------------------------------------------------------------------------------
-# s.6 -- impacts: synthetic signals with a known answer
+# §6 -- impacts: synthetic signals with a known answer
 # --------------------------------------------------------------------------------------
 
 def test_detect_impacts_synthetic_bounce_recovers_one_impact():
-    """A closing-then-rebound velocity step yields exactly one impact (THEORY.md s.6).
+    """A closing-then-rebound velocity step yields exactly one impact (THEORY.md §6).
 
     Construct the cleanest possible atom: the body closes at a constant 1.0 m/s
-    (``v_normal = -1`` since +ve is separating, s.1) and at one frame is reset to a
+    (``v_normal = -1`` since +ve is separating, §1) and at one frame is reset to a
     rebound ``v+ = e * 1.0`` with ``e = 0.4``. This is the textbook reset map
     ``v+ = -e v-`` (here ``v- = -1`` so ``v+ = +0.4``). The detector must find a single
     arrest and read back the closing speed and the restitution it was built from.
@@ -89,20 +89,20 @@ def test_detect_impacts_synthetic_bounce_recovers_one_impact():
     mass = 2.0
     found = impacts.detect_impacts(obs, ImpactParams(), mass=mass)
 
-    assert len(found) == 1, "a single velocity step must produce a single atom (s.6)"
+    assert len(found) == 1, "a single velocity step must produce a single atom (§6)"
     imp = found[0]
     # Closing speed is |v_before| = 1.0 m/s.
     assert imp.closing_speed == pytest.approx(1.0, abs=0.05)
     # Restitution e = -v_after/v_before = -(+0.4)/(-1.0) = 0.4.
     assert imp.restitution == pytest.approx(e_true, abs=0.05)
-    # Impulse atom = m * (v_after - v_before) = 2.0 * (0.4 - (-1.0)) = 2.8 N*s (s.6).
+    # Impulse atom = m * (v_after - v_before) = 2.0 * (0.4 - (-1.0)) = 2.8 N*s (§6).
     assert imp.normal_impulse == pytest.approx(mass * (e_true + 1.0), abs=0.1)
     # The arrest is at frame 100; localized to within the template half-width.
     assert abs(imp.index - 100) <= 3
 
 
 def test_detect_impacts_smooth_signal_returns_none():
-    """A smooth, monotone velocity with no arrest yields no impacts (THEORY.md s.6).
+    """A smooth, monotone velocity with no arrest yields no impacts (THEORY.md §6).
 
     An impact is an *arrest of approach* -- a genuine step in ``v_normal``. A smooth
     ramp (no step) and a steady closing velocity (no rise) are both non-events: the
@@ -133,7 +133,7 @@ import oracle  # noqa: E402  (after the skip guard)
 
 
 def _observe(scenario_name: str):
-    """generate -> observe one scenario (THEORY.md s.9 observable channel)."""
+    """generate -> observe one scenario (THEORY.md §9 observable channel)."""
     sc = oracle.generate(scenario_name, seed=SEED, hz=HZ)
     obs = geometry.observe(
         sc.moving, sc.support, sc.surface, sc.contact_point_local,
@@ -143,7 +143,7 @@ def _observe(scenario_name: str):
 
 
 def test_detect_impacts_bouncing_ball_several_impacts():
-    """The bouncing ball produces several impacts with physical restitution (s.6).
+    """The bouncing ball produces several impacts with physical restitution (§6).
 
     A ball dropped onto a bouncy (low-damping) plane strikes it repeatedly, losing
     energy each bounce. ``detect_impacts`` should find several arrests, each with a
@@ -157,7 +157,7 @@ def test_detect_impacts_bouncing_ball_several_impacts():
     _sc, obs = _observe("bouncing_ball")
     found = impacts.detect_impacts(obs, ImpactParams())
 
-    assert len(found) >= 2, "a bouncing ball strikes the plane several times (s.6)"
+    assert len(found) >= 2, "a bouncing ball strikes the plane several times (§6)"
 
     # Every detected impact is a genuine arrest of approach: positive closing speed.
     for imp in found:
@@ -165,7 +165,7 @@ def test_detect_impacts_bouncing_ball_several_impacts():
 
     finite_e = [imp.restitution for imp in found if np.isfinite(imp.restitution)]
     assert finite_e, "at least one bounce must yield a measurable restitution"
-    # No measured restitution exceeds 1: a passive contact cannot add energy (s.6/s.8).
+    # No measured restitution exceeds 1: a passive contact cannot add energy (§6/§8).
     for e in finite_e:
         assert 0.0 <= e < 1.0 + 1e-6
     # At least one bounce is a true (lossy, non-plastic) rebound with e strictly in (0,1).
@@ -173,13 +173,13 @@ def test_detect_impacts_bouncing_ball_several_impacts():
 
 
 # --------------------------------------------------------------------------------------
-# s.7 -- normal force from penetration (compliance as a calibrated force gauge)
+# §7 -- normal force from penetration (compliance as a calibrated force gauge)
 # --------------------------------------------------------------------------------------
 
 def test_normal_force_from_penetration_spring_law():
-    """lambda = k*delta on contact, zero off-contact, NaN when stiffness unknown (s.7).
+    """lambda = k*delta on contact, zero off-contact, NaN when stiffness unknown (§7).
 
-    THEORY.md s.7: under known compliance the penetration depth is a calibrated force
+    THEORY.md §7: under known compliance the penetration depth is a calibrated force
     gauge. We check the three regimes of the law directly:
 
       * a frame with a real *gap* (g > gap_bias) bears no force -- Signorini g*lambda=0;
@@ -203,14 +203,14 @@ def test_normal_force_from_penetration_spring_law():
     assert force[2] == pytest.approx(k * 0.002)
 
     # A contact frame with a genuine positive gap (above the datum) bears no force even
-    # if flagged in_contact -- the delta clamp at 0 honours Signorini (s.2).
+    # if flagged in_contact -- the delta clamp at 0 honours Signorini (§2).
     gap2 = np.array([0.003])
     f2 = dynamics.normal_force_from_penetration(
         gap2, gap_bias, np.array([True]), mat
     )
     assert f2[0] == pytest.approx(0.0)
 
-    # No stiffness => force unobservable from kinematics alone (s.7) => all-NaN.
+    # No stiffness => force unobservable from kinematics alone (§7) => all-NaN.
     mat_none = MaterialParams(stiffness=None)
     f_none = dynamics.normal_force_from_penetration(
         gap, gap_bias, in_contact, mat_none
@@ -220,22 +220,22 @@ def test_normal_force_from_penetration_spring_law():
 
 
 # --------------------------------------------------------------------------------------
-# s.7 -- friction stick/slip on push_to_slide
+# §7 -- friction stick/slip on push_to_slide
 # --------------------------------------------------------------------------------------
 
 def test_friction_stick_slip_push_to_slide():
-    """Early resting frames label "stick", later sliding frames label "slip" (s.7).
+    """Early resting frames label "stick", later sliding frames label "slip" (§7).
 
     push_to_slide ramps a horizontal force on a seated box: it is STATIC (no tangential
     motion) until the demand reaches the friction-cone boundary, then SLIDES. The
-    stick->slip guard of s.5/s.7 is the kinematic threshold on tangential speed, so the
+    stick->slip guard of §5/§7 is the kinematic threshold on tangential speed, so the
     static-truth region must read all "stick" and the sliding-truth region all "slip".
     """
     sc, obs = _observe("push_to_slide")
     gt = sc.truth
 
     # Run purely kinematically (stiffness unknown): the always-observable channel is the
-    # tangential speed, which is exactly what distinguishes static from sliding (s.3/s.7).
+    # tangential speed, which is exactly what distinguishes static from sliding (§3/§7).
     mat = MaterialParams(stiffness=None)
     nf = dynamics.normal_force_from_penetration(
         obs.gap, 0.0, gt.in_contact, mat
@@ -265,13 +265,13 @@ def test_friction_stick_slip_push_to_slide():
 
 
 # --------------------------------------------------------------------------------------
-# s.7 -- the observability theorem, exhibited on the indeterminate rig
+# §7 -- the observability theorem, exhibited on the indeterminate rig
 # --------------------------------------------------------------------------------------
 
 def test_observability_demo_indeterminate_rig():
-    """The THEORY.md s.7 observability theorem, demonstrated on a real rig.
+    """The THEORY.md §7 observability theorem, demonstrated on a real rig.
 
-    This is the THEORY.md s.7 theorem demonstrated directly: a box on K = 4 corner
+    This is the THEORY.md §7 theorem demonstrated directly: a box on K = 4 corner
     contacts is statically indeterminate -- its 4 vertical corner-force unknowns are
     constrained by only 3 rigid-body static balance equations (sum F_z, sum M_x,
     sum M_y), so the rigid-statics equilibrium map ``A`` (3, K) has a nontrivial null
@@ -296,7 +296,7 @@ def test_observability_demo_indeterminate_rig():
     # velocity-dependent damper b*delta_dot has died out so the measured force is the
     # pure spring f = k*delta. The touchdown transient (force leads penetration) is
     # excluded -- evaluating compliance against the transient would unfairly inflate the
-    # error and is a property of MuJoCo's damped solver, not of the s.7 theorem.
+    # error and is a property of MuJoCo's damped solver, not of the §7 theorem.
     T = pen.shape[1]
     s0 = (3 * T) // 4
 
@@ -308,7 +308,7 @@ def test_observability_demo_indeterminate_rig():
     # rank(A) <= 3 with K unknowns => null space dimension >= K - 3 >= 1.
     assert result["equilibrium_rank"] <= 3
     assert result["null_space_dim"] >= 1, (
-        "an indeterminate rig has a nontrivial load-split null space (s.7)"
+        "an indeterminate rig has a nontrivial load-split null space (§7)"
     )
     assert result["null_space_dim"] == K - result["equilibrium_rank"]
     # The reported basis really lies in the null space (A @ d ~ 0).
@@ -321,7 +321,7 @@ def test_observability_demo_indeterminate_rig():
     # generous 1e-3 to absorb residual damping and the least-squares-fit stiffness.
     REL_TOL = 1e-3
     assert result["max_rel_error"] < REL_TOL, (
-        f"compliance must recover per-corner force (s.7); "
+        f"compliance must recover per-corner force (§7); "
         f"rel error {result['max_rel_error']:.2e} > {REL_TOL:.0e}"
     )
     assert result["observable_compliant"] is True

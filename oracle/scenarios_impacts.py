@@ -1,4 +1,4 @@
-"""Single-pair contact-detection demos showcasing IMPACTS (THEORY.md s.6 / s.9).
+"""Single-pair contact-detection demos showcasing IMPACTS (THEORY.md §6 / §9).
 
 These are additional SCENARIO builders for the MuJoCo truth factory, focused on the
 *impact* regime: a touchdown is a near-instantaneous reset of the relative NORMAL velocity
@@ -9,7 +9,7 @@ demo shapes the physics so a particular impact STRUCTURE dominates:
 * ``hard_drop``         : a dense box dropped from height onto a STIFF floor -> one sharp
   FREE -> IMPACT -> STATIC (a single decisive touchdown atom, then a quiet rest).
 * ``restitution_bounce``: a bouncy ball with high restitution -> a DECAYING TRAIN of
-  IMPACT atoms separated by shrinking FREE flight arcs (the s.6 reset map iterated).
+  IMPACT atoms separated by shrinking FREE flight arcs (the §6 reset map iterated).
 * ``angled_impact``     : a ball hurled at the floor along a diagonal -> a FREE approach,
   an IMPACT, then a tangential departure (the normal velocity flips, the tangential
   velocity survives -> the post-impact motion slides/rolls away).
@@ -74,13 +74,13 @@ _BALL_R = 0.05          # sphere radius (m) -- MUST match the detector's roll_ra
 def _build_hard_drop() -> tuple[mujoco.MjModel, dict]:
     """A dense box dropped from height onto a STIFF floor: one decisive touchdown.
 
-    Physics (THEORY.md s.6, the impact reset map). The box free-falls from ~0.6 m, so at
+    Physics (THEORY.md §6, the impact reset map). The box free-falls from ~0.6 m, so at
     touchdown it carries a large downward speed (``v = sqrt(2 g h)`` ~ 3.4 m/s) -- well above
     the impact normal-velocity threshold, so the touchdown frame labels IMPACT. The floor is
     made STIFF and well-damped (``solref`` with a short time constant and near-critical
     damping) and the box is DENSE, so the touchdown is a single sharp arrest with essentially
     no bounce: the sequence is FREE -> a brief IMPACT atom -> a long sustained STATIC rest.
-    This is the cleanest single-impact demo -- the s.6 "force atom" in isolation.
+    This is the cleanest single-impact demo -- the §6 "force atom" in isolation.
     """
     xml = f"""
 <mujoco>
@@ -115,7 +115,7 @@ def _build_hard_drop() -> tuple[mujoco.MjModel, dict]:
 def _build_restitution_bounce() -> tuple[mujoco.MjModel, dict]:
     """A bouncy ball with high restitution: a decaying TRAIN of impact atoms.
 
-    Physics (THEORY.md s.6): each touchdown applies the reset map ``v+ = -e v-`` with ``e``
+    Physics (THEORY.md §6): each touchdown applies the reset map ``v+ = -e v-`` with ``e``
     the coefficient of restitution; the damping ratio in ``solref`` sets ``e`` (a LOWER ratio
     returns more impact energy -> a bouncier ball). The result is a sequence of sharp IMPACT
     atoms (each touchdown) separated by FREE flight arcs of decreasing length, settling toward
@@ -137,7 +137,7 @@ def _build_restitution_bounce() -> tuple[mujoco.MjModel, dict]:
     recorded truth shows the decaying TRAIN of several IMPACT atoms at decreasing speeds
     (~2.2, ~1.1, ~0.6, ... m/s) before the ball settles to STATIC. The drop is lowered from the
     old 0.6 m so the first touchdown is slow enough to be resolved, yielding more sampled
-    rebounds. The physics (the THEORY.md s.6 reset map iterated) is unchanged; only the drop
+    rebounds. The physics (the THEORY.md §6 reset map iterated) is unchanged; only the drop
     height and the observation cadence are.
     """
     xml = f"""
@@ -180,7 +180,7 @@ def _build_restitution_bounce() -> tuple[mujoco.MjModel, dict]:
 def _build_angled_impact() -> tuple[mujoco.MjModel, dict]:
     """A ball hurled at the floor along a diagonal: impact, then a tangential departure.
 
-    Physics (THEORY.md s.6 / s.3). The ball starts in the air and is launched DOWN AND
+    Physics (THEORY.md §6 / §3). The ball starts in the air and is launched DOWN AND
     FORWARD (large -z and +x velocity). The approach is FREE; at the floor the NORMAL
     component of the velocity is reset (``v_n+ = -e v_n-``) while the TANGENTIAL component
     largely survives -- so the touchdown labels IMPACT (large normal closing speed) and the
@@ -234,7 +234,7 @@ def _build_angled_impact() -> tuple[mujoco.MjModel, dict]:
 def _build_drop_on_incline() -> tuple[mujoco.MjModel, dict]:
     """A ball dropped onto a TILTED plane: an impact against a NON-vertical normal.
 
-    Physics (THEORY.md s.6, impacts; s.1, the support-relative gap with a non-vertical
+    Physics (THEORY.md §6, impacts; §1, the support-relative gap with a non-vertical
     normal). The plane is tilted by ``theta`` about +y, so its outward normal is
     ``n = (sin theta, 0, cos theta)`` -- NOT +z. The ball free-falls and strikes the incline:
     the touchdown labels IMPACT (the relative normal closing speed, taken along the TILTED

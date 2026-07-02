@@ -1,15 +1,15 @@
-"""Unsupervised contact-mode discovery via a sticky HDP-HMM (THEORY.md section 8).
+"""Unsupervised contact-mode discovery via a sticky HDP-HMM (THEORY.md §8).
 
-THEORY.md section 8 makes a research-frontier demand that the rest of the package
-quietly sidesteps: the five canonical modes of section 3 (free / static / sliding /
+THEORY.md §8 makes a research-frontier demand that the rest of the package
+quietly sidesteps: the five canonical modes of §3 (free / static / sliding /
 pivoting / rolling, plus impact) are *presupposed* by ``contact.emissions`` and
-``contact.types.ALL_STATES``. But section 8 wants the estimator to "*discover* the
+``contact.types.ALL_STATES``. But §8 wants the estimator to "*discover* the
 mode vocabulary from data instead of presupposing it" -- both to scale beyond a fixed
 enumeration and to be honest when a recording contains a regime the hand-built five do
 not name. That is precisely what a *Bayesian nonparametric* hidden Markov model buys:
 the number of states is itself inferred, growing only as the data demand.
 
-The object section 8 names for this is the **sticky HDP-HMM** (Fox, Sudderth, Jordan &
+The object §8 names for this is the **sticky HDP-HMM** (Fox, Sudderth, Jordan &
 Willsky, 2008):
 
   * a **Hierarchical Dirichlet Process** ties the per-state transition distributions to
@@ -18,7 +18,7 @@ Willsky, 2008):
     readily a fresh state is spawned;
   * a **sticky** self-transition bias ``hdp_stickiness`` (the ``kappa`` of Fox et al.)
     adds prior mass to staying put, which is the nonparametric analogue of the dwell
-    prior of THEORY.md section 5 -- without it an HDP-HMM notoriously fragments a single
+    prior of THEORY.md §5 -- without it an HDP-HMM notoriously fragments a single
     physical regime into many rapidly-alternating redundant states (it "flickers").
 
 This module is honest about being a *tractable approximation* of that object; see the
@@ -67,13 +67,13 @@ __all__ = ["mode_feature_vector", "discover_modes"]
 
 
 # --------------------------------------------------------------------------------------
-# The per-frame feature (THEORY.md section 3: a contact mode is a pattern in the twist).
+# The per-frame feature (THEORY.md §3: a contact mode is a pattern in the twist).
 # --------------------------------------------------------------------------------------
 #
 # The canonical emissions (contact.emissions) keep the *full* twist with its 2-D
 # tangential vectors so that direction-aware modes (the ring density for sliding, the
 # rolling coupling) are representable. For *clustering*, however, what distinguishes the
-# physical regimes of section 3 is the set of channel MAGNITUDES that are excited:
+# physical regimes of §3 is the set of channel MAGNITUDES that are excited:
 #
 #     gap            -- separation vs. resting (free vs. any contact)
 #     |v_normal|     -- making/breaking contact (impact)
@@ -89,10 +89,10 @@ __all__ = ["mode_feature_vector", "discover_modes"]
 def mode_feature_vector(obs: ContactObservations) -> np.ndarray:
     """Per-frame twist feature ``[gap, |v_n|, |v_t|, |omega_n|, |omega_t|]`` (``(T, 5)``).
 
-    THEORY.md section 3: the contact mode is the pattern of *which twist channels are
+    THEORY.md §3: the contact mode is the pattern of *which twist channels are
     excited*, so the clustering feature is the vector of channel magnitudes (the gap is
     kept signed because its sign is the Signorini separation/penetration branch of
-    section 2 and carries the free-vs-contact distinction). The 2-D tangential channels
+    §2 and carries the free-vs-contact distinction). The 2-D tangential channels
     are reduced to their Euclidean norm: for discovering *which kind of motion* a regime
     is, the tangential *direction* is uninformative (it is exactly the nuisance the
     section-4 ring/mixture densities integrate over), while the *speed* is the signal.
@@ -157,7 +157,7 @@ def _standardize(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 #     theta_k = (mu_k, var_k)  Gaussian emission params per state (diagonal cov)
 #     z_t | z_{t-1} ~ pi_{z_{t-1}};  x_t | z_t ~ N(mu_{z_t}, var_{z_t})
 #
-# kappa is the sticky bias added to the self-transition (THEORY.md s.5's dwell prior in
+# kappa is the sticky bias added to the self-transition (THEORY.md §5's dwell prior in
 # nonparametric clothing). alpha_conc spreads the rows over the shared menu; gamma_conc
 # governs how concentrated the menu itself is (how readily a *new* state earns mass).
 #
@@ -181,7 +181,7 @@ def _gaussian_emission_loglik(
 ) -> np.ndarray:
     """``(T, L)`` log N(z_t; mu_k, diag(var_k)) for standardized features ``z``.
 
-    Diagonal-covariance Gaussian emissions per discovered state (THEORY.md s.4 keeps the
+    Diagonal-covariance Gaussian emissions per discovered state (THEORY.md §4 keeps the
     twist's cross-channel *correlations* for the supervised modes; here, on the reduced
     *magnitude* feature, a diagonal Gaussian per state is the tractable, standard HDP-HMM
     emission and is sufficient to separate the section-3 regimes, which differ in *which*
@@ -210,19 +210,19 @@ def discover_modes(
     params: InferenceParams,
     seed: int = 0,
 ) -> DiscoveredModeResult:
-    """Discover the contact-mode vocabulary from data with a sticky HDP-HMM (s.8).
+    """Discover the contact-mode vocabulary from data with a sticky HDP-HMM (§8).
 
     Fits a **truncated (weak-limit) sticky HDP-HMM** to the per-frame twist feature of
     :func:`mode_feature_vector`, learning *how many* modes the clip needs and which
     frames belong to each -- without ever being told the canonical mode list (THEORY.md
-    section 8: discover the vocabulary instead of presupposing it).
+    §8: discover the vocabulary instead of presupposing it).
 
     Model (truncation ``L = params.max_modes``)
         ``beta  ~ Dir(gamma/L , ... )`` -- a shared top-level menu over the ``L`` states,
         ``gamma = params.hdp_concentration`` (smaller => fewer states earn mass);
         ``pi_k  ~ Dir(alpha * beta + kappa * e_k)`` -- per-state transition row with the
         **sticky** self-bias ``kappa = params.hdp_stickiness`` (Fox et al. 2008), which
-        is the nonparametric dwell prior of THEORY.md section 5 and is what keeps the
+        is the nonparametric dwell prior of THEORY.md §5 and is what keeps the
         labels piecewise-constant rather than flickering;
         emissions are per-state **diagonal Gaussians** on the *standardized* feature.
 
@@ -498,7 +498,7 @@ def _compact(
 
 
 # --------------------------------------------------------------------------------------
-# Validation-only alignment (THEORY.md section 3 canonical signatures).
+# Validation-only alignment (THEORY.md §3 canonical signatures).
 # --------------------------------------------------------------------------------------
 #
 # IMPORTANT: this is *not* part of discovery. Discovery is label-free. This routine
@@ -517,7 +517,7 @@ def _align_signature(
     roll_radius: float = 0.05,
     impact_speed: float = 0.30,
 ) -> str:
-    """Name a discovered state's mean signature by its nearest canonical mode (s.3).
+    """Name a discovered state's mean signature by its nearest canonical mode (§3).
 
     A rule-based reading of the signature ``[gap, |v_n|, |v_t|, |omega_n|, |omega_t|]``
     against the THEORY.md section-3 archetypes, applied **for validation only**:

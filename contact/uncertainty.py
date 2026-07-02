@@ -1,13 +1,13 @@
-"""Per-frame measurement-uncertainty propagation into the detector (THEORY.md s.8).
+"""Per-frame measurement-uncertainty propagation into the detector (THEORY.md §8).
 
-THEORY.md section 8 (and the workflow of section 9) insists that the detector be
+THEORY.md §8 (and the workflow of §9) insists that the detector be
 honest about *what is observable given the sensor*: real captures have noisy and
 **occluded** frames (a marker briefly leaves the cameras, or a fit degrades), and
 those frames carry less information about the contact state than clean ones. A
 detector that weighs every frame equally lets a single garbage frame shout as
 loudly as a confident one. The principled fix is to fold the *per-frame
 measurement covariance* into the generative model so a noisy frame's emission is
-correspondingly less certain and the **temporal prior** (THEORY.md s.5) carries
+correspondingly less certain and the **temporal prior** (THEORY.md §5) carries
 the state across it.
 
 What this module does -- and what it approximates
@@ -31,7 +31,7 @@ power ``w(t)`` -- i.e. multiply the log-emission row by ``w(t)``. A clean frame
 (``meas_var -> 0``) has ``w -> 1`` and is untouched; a badly occluded frame
 (``meas_var`` dominating the channel noise) has ``w -> 0``, which *flattens* that
 frame's log-emission toward a constant so every state becomes (nearly) equally
-likely there and the transition prior of THEORY.md s.5 dictates the state.
+likely there and the transition prior of THEORY.md §5 dictates the state.
 
 HONEST limitations (no overclaiming):
   * Tempering scales *all* states' log-densities by the same ``w(t)``. It does not
@@ -99,7 +99,7 @@ def _n_frames(obs: ContactObservations) -> int:
 def gap_twist_variance(obs: ContactObservations) -> np.ndarray:
     """Per-frame scalar measurement-variance proxy for the observation channels.
 
-    THEORY.md s.8: ``obs.meas_cov`` is the per-frame measurement variance of the
+    THEORY.md §8: ``obs.meas_cov`` is the per-frame measurement variance of the
     tracked contact *point* (the quantity a mocap rig would report a covariance on).
     The observation channels the detector consumes (gap, the linear velocities,
     derived from differentiating that point) all inherit their uncertainty from it,
@@ -158,7 +158,7 @@ def emission_tempering(
     params: EmissionParams | InferenceParams | None = None,
     base_noise: float | None = None,
 ) -> np.ndarray:
-    """Per-frame likelihood-tempering weight ``w(t) in (0, 1]`` (THEORY.md s.8).
+    """Per-frame likelihood-tempering weight ``w(t) in (0, 1]`` (THEORY.md §8).
 
     The weight interpolates between trusting a frame fully and ignoring it, as a
     function of how the measurement variance compares to the detector's *intrinsic*
@@ -172,7 +172,7 @@ def emission_tempering(
     * ``w -> 1`` when ``meas_var -> 0`` (a clean frame: trust the likelihood fully),
     * ``= 0.5`` when measurement noise equals the base channel noise,
     * ``-> 0`` when ``meas_var`` dominates (an occluded frame: flatten its
-      likelihood so the temporal PRIOR of THEORY.md s.5 carries the state).
+      likelihood so the temporal PRIOR of THEORY.md §5 carries the state).
 
     This is a likelihood-TEMPERING approximation to full per-frame emission-noise
     inflation -- see the module docstring for exactly how it differs and why we use
@@ -237,7 +237,7 @@ def emission_tempering(
 
 
 def apply_tempering(log_emission: np.ndarray, w: np.ndarray) -> np.ndarray:
-    """Temper a log-emission matrix: scale each frame row by ``w(t)`` (THEORY.md s.8).
+    """Temper a log-emission matrix: scale each frame row by ``w(t)`` (THEORY.md §8).
 
     Tempering raises a frame's likelihood to the power ``w(t)``, which in log-space
     is a multiplication of that frame's whole row:
@@ -248,9 +248,9 @@ def apply_tempering(log_emission: np.ndarray, w: np.ndarray) -> np.ndarray:
     cross-state log-likelihood *ratio* at that frame is scaled by ``w(t)`` too:
     ``w * (logp_a - logp_b)``. With ``w = 1`` the row is unchanged; with ``w -> 0``
     the row collapses toward the constant ``0`` so every state is (nearly) equally
-    likely at that frame and the HMM's temporal prior (THEORY.md s.5) -- not the
+    likely at that frame and the HMM's temporal prior (THEORY.md §5) -- not the
     corrupted measurement -- decides the state. That is exactly "an occluded frame
-    contributes less" (THEORY.md s.8).
+    contributes less" (THEORY.md §8).
 
     This operates purely on the assembled matrix and is the *only* place the
     approximation touches inference, so the per-state emission builders in
@@ -300,7 +300,7 @@ def simulate_occlusion(
 ) -> ContactObservations:
     """Return a copy of ``obs`` with measurement uncertainty injected on windows.
 
-    A test/data helper to MAKE occluded data (THEORY.md s.9 domain-randomization:
+    A test/data helper to MAKE occluded data (THEORY.md §9 domain-randomization:
     "marker noise and dropout"). Over each ``(start, end)`` half-open frame window it
 
     1. **inflates** ``meas_cov`` by ``inflate`` (a variance multiplier / additive

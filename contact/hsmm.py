@@ -1,7 +1,7 @@
 """Generic explicit-duration (semi-Markov) decoding in log-space (numpy only).
 
 This module is the principled upgrade of the plain HMM in ``contact.hmm`` that
-THEORY.md section 5 demands:
+THEORY.md §5 demands:
 
     "A plain Markov prior says dwell times are memoryless, which is wrong -- the
      chance a contact ends depends on how long it has lasted and how loaded it
@@ -9,7 +9,7 @@ THEORY.md section 5 demands:
      hazard rate, which is also the principled replacement for the toy script's
      hard 'minimum contact duration'."
 
-Why a plain HMM is not enough (s.5).  In an HMM the only knob on persistence is
+Why a plain HMM is not enough (§5).  In an HMM the only knob on persistence is
 the per-frame self-transition probability ``p``.  That makes the dwell time in a
 state *geometrically* distributed: ``P(stay exactly d frames) = (1-p) p^(d-1)``.
 The geometric distribution is *memoryless* -- its hazard (the instantaneous
@@ -38,7 +38,7 @@ layer supplies per-state ``mean_dwell_frames`` (e.g. from
 
 Everything is in log-space (``logsumexp`` reused from ``contact.hmm``) because
 likelihoods over a whole trajectory underflow catastrophically if multiplied raw
-(THEORY.md s.4 & s.5).
+(THEORY.md §4 & §5).
 
 The duration model (negative binomial)
 --------------------------------------
@@ -57,7 +57,7 @@ failure; equivalently it is the *sum of ``r`` i.i.d. geometric variables*.  That
   tighter around the mean, more deterministic dwell" behaviour the spec asks for.
 
 It is the discrete analogue of a Gamma (Erlang) holding time, so it is the
-natural discrete-time shadow of a continuous-time hazard model (s.5).
+natural discrete-time shadow of a continuous-time hazard model (§5).
 
 Parameterisation.  We work with ``k = d - 1 >= 0`` (extra frames beyond the
 minimum dwell of one frame) and put ``k ~ NB(r, p)`` with ``r = concentration``.
@@ -115,7 +115,7 @@ def duration_logpmf(
     mean_dwell_frames: float,
     concentration: float,
 ) -> float | np.ndarray:
-    """Log-pmf of the dwell duration ``d >= 1`` (frames) for one state (THEORY.md s.5).
+    """Log-pmf of the dwell duration ``d >= 1`` (frames) for one state (THEORY.md §5).
 
     A **shifted negative-binomial** distribution: with ``k = d - 1`` we take
     ``k ~ NB(r, p)`` where ``r = concentration`` and ``p`` is chosen so the mean
@@ -231,14 +231,14 @@ def hsmm_viterbi(
     concentration: float,
     max_dur: int | None = None,
 ) -> np.ndarray:
-    """MAP state path under an explicit-duration semi-Markov model (THEORY.md s.5).
+    """MAP state path under an explicit-duration semi-Markov model (THEORY.md §5).
 
     The trajectory is modelled as a sequence of *segments*, each a maximal run of
     one state. A segment of state ``s`` covering frames ``[a, b]`` (length
     ``d = b - a + 1``) contributes three terms to the log-score:
 
         sum_{t=a..b} log_emission[t, s]          (the segment's emissions)
-        + duration_logpmf(d | s)                 (the explicit dwell prior, s.5)
+        + duration_logpmf(d | s)                 (the explicit dwell prior, §5)
         + log P(prev_state -> s)                 (the inter-segment transition)
 
     and the very first segment uses ``log_init[s]`` in place of the transition.
@@ -276,7 +276,7 @@ def hsmm_viterbi(
 
     We store, for each ``(t, s, flavour)``, the chosen duration, predecessor state and
     predecessor flavour to backtrace whole segments. The result is the single most
-    likely *contiguous* mode sequence -- the clean boolean segmentation of s.5 -- with
+    likely *contiguous* mode sequence -- the clean boolean segmentation of §5 -- with
     short spurious segments suppressed by the duration prior (not a morphological
     clean-up) and long genuine bouts represented exactly (not truncated at the cap).
     Single-state (``S == 1``) models work too: every entry into a state is then a
@@ -338,7 +338,7 @@ def hsmm_posteriors(
     concentration: float,
     max_dur: int | None = None,
 ) -> tuple[np.ndarray, float]:
-    """Per-frame state posteriors under the explicit-duration model (THEORY.md s.5).
+    """Per-frame state posteriors under the explicit-duration model (THEORY.md §5).
 
     This is the *exact* segmental (explicit-duration) forward-backward with the same
     **duration censoring** as :func:`hsmm_viterbi` (a segment that runs the full
@@ -416,7 +416,7 @@ def hsmm_posteriors(
 
 
 class SemiMarkovHMM:
-    """Explicit-duration (semi-Markov) HMM (THEORY.md s.5).
+    """Explicit-duration (semi-Markov) HMM (THEORY.md §5).
 
     An HMM whose dwell time carries an explicit duration prior instead of a memoryless
     geometric self-loop, so short spurious segments are intrinsically improbable -- the

@@ -37,7 +37,7 @@ from contact import observe  # noqa: E402
 from contact.config import DetectorConfig  # noqa: E402
 from contact.geometry_resolvers import BoxPlane, FlatRegion, SphereSphere  # noqa: E402
 from contact.graph import _resolve_support  # noqa: E402
-from contact.model import ContactDetector  # noqa: E402
+from contact.detector import ContactDetector  # noqa: E402
 from contact.types import IMPACT, PoseTrajectory  # noqa: E402
 
 # --------------------------------------------------------------------------------------

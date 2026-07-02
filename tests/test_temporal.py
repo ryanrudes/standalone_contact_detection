@@ -1,6 +1,6 @@
-"""Tests for the s.5 *temporal* upgrades: gap-gated guards and explicit-duration dwell.
+"""Tests for the §5 *temporal* upgrades: gap-gated guards and explicit-duration dwell.
 
-THEORY.md section 5 says the HMM is the discrete shadow of a hybrid dynamical
+THEORY.md §5 says the HMM is the discrete shadow of a hybrid dynamical
 system, and hands us two refinements "for free":
 
   * the free->contact transition prior should be *state-dependent* -- gated by the
@@ -14,8 +14,8 @@ This module exercises exactly those two objects, against properties that must ho
 *by construction* rather than against tuned magic numbers:
 
   * ``contact.transitions.base_transition_matrix`` -- the time-homogeneous prior:
-    proper row-stochasticity, strict positivity (finite log-space, s.4), and the
-    s.6 timescale separation (IMPACT dwells shorter => higher self-exit than the
+    proper row-stochasticity, strict positivity (finite log-space, §4), and the
+    §6 timescale separation (IMPACT dwells shorter => higher self-exit than the
     sustained modes).
   * ``contact.transitions.gated_transition_tensor`` -- the gap-gated guard: the
     free->contact entry mass must be ~0 far above the surface, rise *monotonically*
@@ -58,7 +58,7 @@ def _gap_only_obs(gap: np.ndarray) -> ContactObservations:
     """A ContactObservations carrying only a gap ramp; other channels are zeroed.
 
     ``gated_transition_tensor`` consumes *only* ``obs.gap`` (it evaluates the gate on
-    the signed distance, s.1), so the velocity/twist channels are irrelevant here and
+    the signed distance, §1), so the velocity/twist channels are irrelevant here and
     set to zero just to satisfy the dataclass contract.
     """
     gap = np.asarray(gap, dtype=float).ravel()
@@ -75,12 +75,12 @@ def _gap_only_obs(gap: np.ndarray) -> ContactObservations:
 
 
 # ======================================================================================
-# base_transition_matrix  (the time-homogeneous temporal prior, s.5 / s.6)
+# base_transition_matrix  (the time-homogeneous temporal prior, §5 / §6)
 # ======================================================================================
 
 class TestBaseTransitionMatrix:
     def test_rows_sum_to_one(self) -> None:
-        """Every row is a proper distribution over the next state (normalized, s.4)."""
+        """Every row is a proper distribution over the next state (normalized, §4)."""
         P = base_transition_matrix(ALL_STATES, DT, TransitionParams())
         assert P.shape == (len(ALL_STATES), len(ALL_STATES))
         assert np.allclose(P.sum(axis=1), 1.0, atol=1e-12), (
@@ -88,7 +88,7 @@ class TestBaseTransitionMatrix:
         )
 
     def test_strictly_positive(self) -> None:
-        """Every entry is strictly > 0 so log-space has no -inf (s.4).
+        """Every entry is strictly > 0 so log-space has no -inf (§4).
 
         The HMM must always be able to leave any state (however unlikely), so the
         smoother can recover from a surprising frame -- the ``_FLOOR`` in the module
@@ -99,7 +99,7 @@ class TestBaseTransitionMatrix:
         assert np.all(np.isfinite(np.log(P))), "log of every entry must be finite"
 
     def test_self_transition_is_dwell_survival(self) -> None:
-        """The diagonal is the CT-Markov survival ``exp(-dt/tau)`` of the dwell (s.5).
+        """The diagonal is the CT-Markov survival ``exp(-dt/tau)`` of the dwell (§5).
 
         Each state's "stay" probability is the exponential survival of a jump process
         with that state's mean dwell; we check it matches for the baseline modes and
@@ -119,9 +119,9 @@ class TestBaseTransitionMatrix:
         assert P[idx[IMPACT], idx[IMPACT]] == pytest.approx(expected_impact, rel=1e-9)
 
     def test_impact_has_shorter_dwell_than_sustained(self) -> None:
-        """IMPACT is a finer-timescale transient: shorter dwell => higher self-exit (s.6).
+        """IMPACT is a finer-timescale transient: shorter dwell => higher self-exit (§6).
 
-        s.6 places impact "at a finer timescale than the sustained modes," so it must
+        §6 places impact "at a finer timescale than the sustained modes," so it must
         persist *less*: its self-transition probability is strictly smaller (it exits
         sooner) than every sustained contact mode's.
         """
@@ -141,7 +141,7 @@ class TestBaseTransitionMatrix:
             )
 
     def test_impact_leads_the_free_entry(self) -> None:
-        """FREE re-enters contact preferentially through IMPACT (the make guard, s.6).
+        """FREE re-enters contact preferentially through IMPACT (the make guard, §6).
 
         Not a tuned threshold: just the ordering the docstring promises -- FREE->IMPACT
         carries more mass than FREE->any single sustained mode.
@@ -151,17 +151,17 @@ class TestBaseTransitionMatrix:
         free_to_impact = P[idx[FREE], idx[IMPACT]]
         for m in [m for m in CONTACT_MODES if m != IMPACT]:
             assert free_to_impact > P[idx[FREE], idx[m]], (
-                "FREE->IMPACT should lead FREE->sustained (make guard, s.6)"
+                "FREE->IMPACT should lead FREE->sustained (make guard, §6)"
             )
 
 
 # ======================================================================================
-# gated_transition_tensor  (the state-dependent gap guard, s.5)
+# gated_transition_tensor  (the state-dependent gap guard, §5)
 # ======================================================================================
 
 class TestGatedTransitionTensor:
     def test_every_row_every_frame_sums_to_one(self) -> None:
-        """Each frame's matrix is row-stochastic (cross-state comparisons valid, s.4)."""
+        """Each frame's matrix is row-stochastic (cross-state comparisons valid, §4)."""
         gap = np.linspace(0.1, -0.01, 40)  # an arbitrary descent through the surface
         obs = _gap_only_obs(gap)
         params = TransitionParams()
@@ -175,7 +175,7 @@ class TestGatedTransitionTensor:
         )
 
     def test_strictly_positive_everywhere(self) -> None:
-        """Even with the gate shut, every entry stays > 0 (finite log, s.4)."""
+        """Even with the gate shut, every entry stays > 0 (finite log, §4)."""
         gap = np.linspace(0.5, -0.02, 30)
         obs = _gap_only_obs(gap)
         tensor = gated_transition_tensor(obs, ALL_STATES, DT, TransitionParams())
@@ -226,7 +226,7 @@ class TestGatedTransitionTensor:
     def test_monotonic_gating_on_a_gap_ramp(self) -> None:
         """On a monotone gap descent, the FREE->contact entry mass rises monotonically.
 
-        This is the core property of the s.5 guard: the chance of *entering* contact is
+        This is the core property of the §5 guard: the chance of *entering* contact is
         a monotone increasing function of "how close are we" (decreasing gap). We feed a
         strictly-decreasing gap ramp from well above to well below the gate and assert
         the per-frame entry mass is non-decreasing throughout (and strictly grows across
@@ -280,7 +280,7 @@ class TestGatedTransitionTensor:
             )
 
     def test_non_free_rows_are_frame_independent(self) -> None:
-        """Non-FREE rows are copied straight from the base (governed by lambda->0, s.5).
+        """Non-FREE rows are copied straight from the base (governed by lambda->0, §5).
 
         Only the FREE row is gap-gated; contact->contact / contact->free are the *force*
         break guard, not the gap guard, so they must equal the base matrix at every frame.
@@ -301,7 +301,7 @@ class TestGatedTransitionTensor:
 
 
 # ======================================================================================
-# duration_logpmf  (the explicit-duration dwell prior, s.5)
+# duration_logpmf  (the explicit-duration dwell prior, §5)
 # ======================================================================================
 
 class TestDurationLogpmf:
@@ -334,7 +334,7 @@ class TestDurationLogpmf:
     def test_higher_concentration_is_more_peaked(self) -> None:
         """Larger concentration concentrates mass around the mean (smaller variance).
 
-        s.5: ``concentration ~ 1`` is the memoryless geometric dwell; higher values are
+        §5: ``concentration ~ 1`` is the memoryless geometric dwell; higher values are
         a sum of more geometric "stages" whose CLT effect tightens the distribution
         (coefficient of variation ~ 1/sqrt(concentration)). We assert the variance is
         strictly monotone-decreasing in concentration.
@@ -373,7 +373,7 @@ class TestDurationLogpmf:
 
 
 # ======================================================================================
-# hsmm_viterbi  (explicit-duration MAP path absorbs spurious blips, s.5)
+# hsmm_viterbi  (explicit-duration MAP path absorbs spurious blips, §5)
 # ======================================================================================
 
 class TestHsmmViterbiBlipAbsorption:

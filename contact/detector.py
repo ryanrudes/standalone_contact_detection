@@ -1,28 +1,28 @@
 """The assembled detector: the generative-HMM core wired end to end.
 
-This module is the integration point of THEORY.md sections 4-8 -- where the
+This module is the integration point of THEORY.md §4-§8 -- where the
 leaf pieces (support-relative geometry, per-state emission likelihoods, the
 reusable HMM, the make/break event refiner) compose into the single estimator
-THEORY.md section 8 names: a probabilistic hybrid dynamical system inferred as a
+THEORY.md §8 names: a probabilistic hybrid dynamical system inferred as a
 posterior over the active contact mode at every frame.
 
 The pipeline ``detect(obs)`` runs is exactly the pragmatic rung 1-4 ladder of
-THEORY.md section 10:
+THEORY.md §10:
 
-  1. **States** = ``ALL_STATES`` (``free`` + the five contact modes of s.3).
+  1. **States** = ``ALL_STATES`` (``free`` + the five contact modes of §3).
   2. **A temporal prior** -- a continuous-time Markov jump discretized per median
-     ``dt`` (THEORY.md s.5): ``P(stay over dt) = exp(-dt/dwell)``, the leftover mass
+     ``dt`` (THEORY.md §5): ``P(stay over dt) = exp(-dt/dwell)``, the leftover mass
      split among the other states with a *structure* that mirrors the hybrid
      system's guards (free is the natural gateway; ``impact`` is a short-lived
      transient that bridges free <-> sustained contact).
-  3. **EM self-calibration** of the resting-gap bias (THEORY.md s.7 & s.8): the
+  3. **EM self-calibration** of the resting-gap bias (THEORY.md §7 & §8): the
      contact-state mean gap, estimated by posterior responsibility, which is the
      principled replacement for the toy script's circular quiet-frame median.
   4. **Smoothed inference**: forward-backward gives the calibrated per-frame
-     posterior P(contact) (s.5), Viterbi gives the clean contiguous mode
-     segmentation (s.5), the make/break instants are refined by the event detector
-     (s.6), and -- if a material stiffness is known -- penetration becomes a
-     calibrated force gauge ``lambda = k * delta`` (s.7).
+     posterior P(contact) (§5), Viterbi gives the clean contiguous mode
+     segmentation (§5), the make/break instants are refined by the event detector
+     (§6), and -- if a material stiffness is known -- penetration becomes a
+     calibrated force gauge ``lambda = k * delta`` (§7).
 
 It is the only module permitted to import every other ``contact`` submodule.
 """
@@ -61,10 +61,10 @@ __all__ = ["ContactDetector"]
 
 
 # --------------------------------------------------------------------------------------
-# Transition prior (THEORY.md section 5: the discrete shadow of the hybrid system's
+# Transition prior (THEORY.md §5: the discrete shadow of the hybrid system's
 # guards). The transition structure itself now lives in :mod:`contact.transitions`,
 # which builds (a) the time-homogeneous base matrix and (b) the per-frame, gap-*gated*
-# tensor in which free->contact entry rises as the gap nears zero (the s.5 guard). This
+# tensor in which free->contact entry rises as the gap nears zero (the §5 guard). This
 # module only chooses *which* prior to feed the inference and converts it to log-space.
 # --------------------------------------------------------------------------------------
 
@@ -72,7 +72,7 @@ __all__ = ["ContactDetector"]
 def _median_dt(t: np.ndarray) -> float:
     """Median sampling interval of ``t`` (s), used to discretize the CT Markov jump.
 
-    THEORY.md s.5: the transition prior is a continuous-time Markov *jump process*
+    THEORY.md §5: the transition prior is a continuous-time Markov *jump process*
     discretized per frame, so its per-step stay probability depends on the frame
     spacing. We use the median ``dt`` (robust to a stray dropped frame) as the single
     representative step; for the near-uniform clocks here this equals the nominal
@@ -89,7 +89,7 @@ def _median_dt(t: np.ndarray) -> float:
 
 
 # --------------------------------------------------------------------------------------
-# Interval extraction (THEORY.md section 5: Viterbi gives the clean contiguous
+# Interval extraction (THEORY.md §5: Viterbi gives the clean contiguous
 # segmentation that replaces the toy script's morphological cleanup).
 # --------------------------------------------------------------------------------------
 
@@ -99,7 +99,7 @@ def _intervals_from_map(
 ) -> list[ContactInterval]:
     """Contiguous non-FREE runs of the MAP path, each tagged with its dominant mode.
 
-    THEORY.md s.5: the Viterbi path is already temporally coherent, so a contact
+    THEORY.md §5: the Viterbi path is already temporally coherent, so a contact
     interval is simply a maximal run of frames whose MAP label is not FREE. The run's
     reported ``mode`` is the most frequent non-FREE label inside it (a run can contain
     e.g. a leading IMPACT then STATIC; the dominant label names the interval).
@@ -158,26 +158,26 @@ def _emission_scaled_to_motion(cfg: DetectorConfig, obs) -> DetectorConfig:
 class ContactDetector:
     """Infer the per-frame contact state from support-relative observations.
 
-    Wraps the whole generative-HMM estimator of THEORY.md sections 4-8 behind a single
-    :meth:`detect` call. The pipeline now exercises the full s.5-s.7 upgrade stack:
+    Wraps the whole generative-HMM estimator of THEORY.md §4-§8 behind a single
+    :meth:`detect` call. The pipeline now exercises the full §5-§7 upgrade stack:
 
-      * **Gap-gated transitions (s.5).** Instead of a fixed transition matrix the prior
+      * **Gap-gated transitions (§5).** Instead of a fixed transition matrix the prior
         is the per-frame ``(T, S, S)`` tensor of :func:`contact.transitions.gated_transition_tensor`,
         whose free->contact entry mass *rises as the gap nears zero* -- the hybrid
         system's state-dependent make guard. forward-backward (and the EM bias loop)
         consume this gated tensor.
-      * **Semi-Markov decoding (s.5).** When ``config.transition.use_semi_markov`` is
+      * **Semi-Markov decoding (§5).** When ``config.transition.use_semi_markov`` is
         set, the MAP path is decoded with the explicit-duration
         :func:`contact.hsmm.hsmm_viterbi` (per-state mean dwell in *frames*), whose
         duration prior makes 1-frame blips intrinsically improbable -- the principled
         replacement for a hard minimum-contact-duration. Otherwise the plain
         :func:`contact.hmm.viterbi` runs on the gated tensor. The *per-frame posterior*
         always comes from forward-backward on the gated tensor.
-      * **Impact atoms (s.6).** :func:`contact.impacts.detect_impacts` characterizes the
+      * **Impact atoms (§6).** :func:`contact.impacts.detect_impacts` characterizes the
         velocity-step atoms of the force measure (closing speed / restitution /
         impulse), reported in ``DetectionResult.impulses`` alongside the make/break
         events.
-      * **Dynamics & material (s.7).** Given a material stiffness, penetration becomes a
+      * **Dynamics & material (§7).** Given a material stiffness, penetration becomes a
         calibrated force gauge via :func:`contact.dynamics.normal_force_from_penetration`,
         and :func:`contact.dynamics.friction_stick_slip` labels each contact frame
         stick/slip in ``DetectionResult.slip_state``.
@@ -202,9 +202,9 @@ class ContactDetector:
             The fully-populated result: calibrated contact posterior, full state
             posterior, MAP mode labels (plain-HMM or semi-Markov), the derived boolean
             contact mask, contact intervals with dominant modes, make/break events, the
-            characterized impact atoms (s.6), the EM-recovered resting bias, and -- if
+            characterized impact atoms (§6), the EM-recovered resting bias, and -- if
             ``config.material.stiffness`` is set -- the estimated normal force per frame
-            and the per-frame stick/slip labels (s.7).
+            and the per-frame stick/slip labels (§7).
         """
         cfg = _emission_scaled_to_motion(self.config, obs)
         states = list(ALL_STATES)  # (a) FREE + the five contact modes
@@ -215,10 +215,10 @@ class ContactDetector:
         S = len(states)
         free_idx = states.index(FREE)
 
-        # --- (b) Transition prior (THEORY.md s.5). --------------------------------------
+        # --- (b) Transition prior (THEORY.md §5). --------------------------------------
         # Two log-space objects are built once and reused throughout:
         #   * log_trans_gated : the per-frame (T, S, S) gap-GATED tensor -- free->contact
-        #     entry rises as gap -> 0 (the state-dependent make guard, s.5). It drives the
+        #     entry rises as gap -> 0 (the state-dependent make guard, §5). It drives the
         #     EM bias loop and the final forward-backward smoothing, where the gate's
         #     frame-by-frame shaping of the entry probability is exactly what we want.
         #   * log_trans_base  : the time-homogeneous (S, S) base matrix -- the gate-free
@@ -228,29 +228,29 @@ class ContactDetector:
         #     and by the emissions, which already pin touchdown to gap ~ 0).
         dt = _median_dt(t)
         gated = transitions.gated_transition_tensor(obs, states, dt, cfg.transition)
-        log_trans_gated = np.log(gated)  # gated is strictly positive (s.4).
+        log_trans_gated = np.log(gated)  # gated is strictly positive (§4).
         base = transitions.base_transition_matrix(states, dt, cfg.transition)
         log_trans_base = np.log(base)
 
         # Initial-state prior: most trajectories begin free (a body approaching, or
         # already resting). We use a gently FREE-favouring prior rather than a hard one
         # so a recording that *starts* mid-contact is not fought by the prior; the
-        # emissions dominate after the first frame anyway. (THEORY.md s.5.)
+        # emissions dominate after the first frame anyway. (THEORY.md §5.)
         init = np.full(S, (1.0 - 0.5) / (S - 1), dtype=float)
         init[free_idx] = 0.5
         log_init = np.log(init)
 
         # The per-frame smoother: an HMM over the modes whose prior is the gap-gated guard.
-        # Built once and reused for the EM responsibilities and the final posterior (s.5) --
+        # Built once and reused for the EM responsibilities and the final posterior (§5) --
         # the emissions are the only thing that changes between calls.
         smoother = hmm.HMM(log_trans_gated, log_init)
 
-        # --- (b') Per-frame measurement-uncertainty tempering (THEORY.md s.8). ----------
+        # --- (b') Per-frame measurement-uncertainty tempering (THEORY.md §8). ----------
         # OFF by default and a strict no-op unless BOTH the flag is set AND the
         # observations carry a per-frame measurement covariance. When enabled we compute
         # one tempering weight per frame, w(t) in (0, 1], from obs.meas_cov; a clean frame
         # has w ~ 1 (untouched) and a badly occluded frame has w -> 0, which flattens that
-        # frame's emission row so the temporal prior (s.5) -- not the corrupted
+        # frame's emission row so the temporal prior (§5) -- not the corrupted
         # measurement -- carries the state. The weight is folded into EVERY assembled
         # emission matrix below (the EM loop AND the final pass) via uncertainty.apply_tempering.
         # With the flag off (or meas_cov None) `temper_w` is None and the emission matrix is
@@ -267,7 +267,7 @@ class ContactDetector:
         if getattr(cfg.inference, "use_uncertainty", False) and obs.meas_cov is not None:
             temper_w = uncertainty.emission_tempering(obs, cfg.emission)
 
-        # --- (c) EM self-calibration of the resting-gap bias (THEORY.md s.7 & s.8). The
+        # --- (c) EM self-calibration of the resting-gap bias (THEORY.md §7 & §8). The
         # principled replacement for the toy script's circular quiet-frame median -- the
         # contact responsibilities that weight the bias come from the model itself.
         gap_bias = self._calibrate_gap_bias(
@@ -284,15 +284,15 @@ class ContactDetector:
         # or not we decode the MAP path with the semi-Markov model (the gated guard is
         # exactly the per-frame prior we want for the calibrated P(contact)).
         gamma, _loglik = smoother.posterior(log_em)
-        # Calibrated per-frame contact posterior = 1 - P(free) (THEORY.md s.4/s.5).
+        # Calibrated per-frame contact posterior = 1 - P(free) (THEORY.md §4/§5).
         contact_posterior = 1.0 - gamma[:, free_idx]
 
-        # MAP segmentation (THEORY.md s.5): the single most likely contiguous mode
+        # MAP segmentation (THEORY.md §5): the single most likely contiguous mode
         # sequence. Either the explicit-duration semi-Markov decoder (blips suppressed by
         # the duration prior, not by morphology) or the plain Viterbi on the gated tensor.
         if cfg.transition.use_semi_markov:
             # Per-state mean dwell in FRAMES: tau / dt for every state, with IMPACT's
-            # shorter transient dwell (s.6). dt is the median frame period; guard dt > 0.
+            # shorter transient dwell (§6). dt is the median frame period; guard dt > 0.
             dt_safe = max(dt, 1e-9)
             mean_dwell_frames = np.full(
                 S, float(cfg.transition.mean_dwell_time) / dt_safe, dtype=float
@@ -318,27 +318,27 @@ class ContactDetector:
         in_contact = np.array([s != FREE for s in map_state], dtype=bool)
         intervals = _intervals_from_map(t, map_state)
 
-        # --- (e) Make/break event refinement (THEORY.md s.6).
+        # --- (e) Make/break event refinement (THEORY.md §6).
         # Touchdown/liftoff events come from the MAP boolean mask (the contact-state onset
-        # of s.5); the impact ATOMS are the finer-timescale characterization of the make
+        # of §5); the impact ATOMS are the finer-timescale characterization of the make
         # instants (closing speed, restitution, impulse). They are complementary: events
-        # mark *that* a transition happened, impulses mark *how hard* it hit (s.6). Mass
-        # is unknown from the observable channel here, so impulse magnitudes are NaN (s.7,
+        # mark *that* a transition happened, impulses mark *how hard* it hit (§6). Mass
+        # is unknown from the observable channel here, so impulse magnitudes are NaN (§7,
         # the force-as-measure atom is unobservable from kinematics alone without mass).
         ev: list[ContactEvent] = events.detect_events(obs, in_contact, t=t)
         impulses: list[ContactImpulse] = impacts.detect_impacts(obs, cfg.impact, mass=None)
 
-        # --- (f) Dynamics & material (THEORY.md s.7). -----------------------------------
+        # --- (f) Dynamics & material (THEORY.md §7). -----------------------------------
         # Under known compliance the penetration depth is a calibrated force gauge,
         # lambda = k * delta, delta measured relative to the resting bias (so the resting
         # offset is not mistaken for a load) and zeroed off the Viterbi contact mask
-        # (Signorini, s.2). With the force in hand the friction cone labels each contact
+        # (Signorini, §2). With the force in hand the friction cone labels each contact
         # frame stick/slip; off-contact frames get "". When stiffness is unknown the force
         # is unobservable, so normal_force stays None and the slip labels fall back to the
         # always-available kinematic (||v_t|| vs slip_speed_threshold) rule, masked to the
         # detector's own contact frames so we report friction state only where we believe
         # a contact exists (we do NOT let the cone fight the HMM/HSMM MAP -- the motion is
-        # the hard evidence; the cone only refines a borderline stick, per s.7).
+        # the hard evidence; the cone only refines a borderline stick, per §7).
         if cfg.material.stiffness is not None:
             nf = dynamics.normal_force_from_penetration(
                 gap, gap_bias, in_contact, cfg.material
@@ -349,7 +349,7 @@ class ContactDetector:
             normal_force = None
             # No force gauge: friction_stick_slip returns the kinematic stick/slip label
             # for every frame; we mask it to the contact frames the MAP path believes in
-            # so off-contact frames read "" (no friction state without a contact, s.2).
+            # so off-contact frames read "" (no friction state without a contact, §2).
             kin = dynamics.friction_stick_slip(
                 obs, np.full(t.shape[0], np.nan, dtype=float), cfg.material
             )
@@ -374,7 +374,7 @@ class ContactDetector:
 
     @staticmethod
     def _calibrate_gap_bias(obs, cfg, states, gap, smoother, temper_w, contact_state_idx):
-        """EM self-calibration of the resting-gap bias (THEORY.md s.7/s.8).
+        """EM self-calibration of the resting-gap bias (THEORY.md §7/§8).
 
         Each EM step: (E) the smoothed posterior under the current bias (the gated guard in
         ``smoother`` informs the responsibilities); (M) re-estimate the bias as the
@@ -399,12 +399,12 @@ class ContactDetector:
     def discover_modes(
         self, obs: ContactObservations, seed: int = 0
     ) -> DiscoveredModeResult:
-        """Discover the contact-mode vocabulary from data, label-free (THEORY.md s.8).
+        """Discover the contact-mode vocabulary from data, label-free (THEORY.md §8).
 
         A thin entrypoint onto :func:`contact.mode_discovery.discover_modes`: instead of
-        presupposing the canonical five modes of s.3, fit a truncated (weak-limit) sticky
+        presupposing the canonical five modes of §3, fit a truncated (weak-limit) sticky
         HDP-HMM to the per-frame twist feature and let the data say *how many* distinct
-        contact regimes the clip contains and which frames belong to each (THEORY.md s.8:
+        contact regimes the clip contains and which frames belong to each (THEORY.md §8:
         "discover the mode vocabulary from data instead of presupposing it"; scaling
         beyond a fixed enumeration). The HDP truncation level / concentration / stickiness
         come from this detector's :class:`~contact.config.InferenceParams`

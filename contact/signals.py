@@ -9,10 +9,10 @@ fixed `dt` will silently mis-scale velocities the moment the sampling wobbles. S
 every routine below takes the explicit timestamp array `t` and measures its windows
 and kernels in *seconds*, not in samples.
 
-The governing caution comes from THEORY.md section 6: the contact velocity is a
+The governing caution comes from THEORY.md §6: the contact velocity is a
 function of *bounded variation* — smooth within a mode but with genuine jumps at
 impacts (the reset map `v+ = -e v-`). A single aggressive global smoother forbids
-those jumps and therefore destroys the very make/break timing that section 6 says
+those jumps and therefore destroys the very make/break timing that §6 says
 carries the most information. Hence smoothing here is always *optional and local*:
 small `sigma_time` / `window_time` measured in real seconds, never a wide filter.
 """
@@ -44,7 +44,7 @@ def gaussian_smooth(x: np.ndarray, t: np.ndarray, sigma_time: float) -> np.ndarr
     are row-normalized, so a constant signal is returned unchanged (DC is preserved) and
     boundaries are handled without bias. `sigma_time <= 0` is a no-op (returns `x`).
 
-    Keep `sigma_time` small: THEORY.md section 6 warns that wide smoothing forbids the
+    Keep `sigma_time` small: THEORY.md §6 warns that wide smoothing forbids the
     velocity jumps at impacts and so destroys make/break timing.
 
     Parameters
@@ -90,7 +90,7 @@ def savgol_derivative(
     inside a window of `window_time` seconds (centred where possible, truncated at the
     ends) and read off the analytic slope at that sample. Because the fit is in real
     time, this handles non-uniform sampling correctly, and because it is *local* it does
-    not smear the velocity jump at an impact across the whole record (THEORY.md s.6).
+    not smear the velocity jump at an impact across the whole record (THEORY.md §6).
 
     Noise/robustness tradeoff (inline): a wider `window_time` averages out more
     differentiation noise (the killer of bare finite differences) but a window that
@@ -161,8 +161,8 @@ def derivative(
     Two regimes, chosen by `smooth_time`:
       * `smooth_time > 0` : a *local* least-squares fit over a window of `smooth_time`
         seconds (`savgol_derivative`). This is markedly more robust to noise than raw
-        finite differences, which amplify it (THEORY.md s.4), while staying local so it
-        does not smear impact timing (THEORY.md s.6).
+        finite differences, which amplify it (THEORY.md §4), while staying local so it
+        does not smear impact timing (THEORY.md §6).
       * `smooth_time <= 0`: plain `np.gradient`, which already uses correct non-uniform
         second-order central differences from `t`. Use this when you want the rawest,
         lowest-latency estimate and will handle noise elsewhere.

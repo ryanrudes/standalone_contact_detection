@@ -1,7 +1,7 @@
 """Permanent validation of the capability registry + value-of-information (DESIGN.md Phase 5).
 
 These promote the session's capability checks into self-contained tests. Each builds its scene
-*fresh* and asserts the registry's contract (DESIGN.md PART I sections 4-8):
+*fresh* and asserts the registry's contract (DESIGN.md PART I §4-§8):
 
 * an empty :class:`~contact.capabilities.Capabilities` reproduces the validated kinematic/flat
   floor bit-for-bit (the no-op-when-absent guarantee);
@@ -30,7 +30,7 @@ from contact import observe  # noqa: E402
 from contact.capabilities import Capabilities, detect_pair, value_of_information  # noqa: E402
 from contact.config import DetectorConfig  # noqa: E402
 from contact.graph import _resolve_support  # noqa: E402
-from contact.model import ContactDetector  # noqa: E402
+from contact.detector import ContactDetector  # noqa: E402
 from contact.types import IMPACT  # noqa: E402
 
 # --------------------------------------------------------------------------------------

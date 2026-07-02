@@ -1,7 +1,7 @@
-"""Tests for contact-implicit inverse dynamics — the THEORY.md s.8 "north star".
+"""Tests for contact-implicit inverse dynamics — the THEORY.md §8 "north star".
 
-This suite stresses :mod:`contact.dynamics_id`, the final rung beyond s.10's rung 5:
-the dual, dynamics-first question of s.8 — *given a rigid body's observed motion and
+This suite stresses :mod:`contact.inverse_dynamics`, the final rung beyond §10's rung 5:
+the dual, dynamics-first question of §8 — *given a rigid body's observed motion and
 its mass/inertia, what physically-valid contact forces (Signorini normal >= 0 + Coulomb
 friction cone ||f_t|| <= mu*f_n) supply the Newton-Euler net wrench?* The contacts that
 come out carrying load ARE the active set.
@@ -9,21 +9,21 @@ come out carrying load ARE the active set.
 Everything here is SYNTHETIC: poses are built in closed form so the right answer is
 known exactly, and the tests check the three pillars of the module against it:
 
-* **Newton-Euler (s.8).** :func:`required_wrench` on a body at rest must demand a wrench
+* **Newton-Euler (§8).** :func:`required_wrench` on a body at rest must demand a wrench
   that exactly balances gravity (``F = [0,0,m*g]``, ``tau ~ 0``), and on a body in
   free-fall (``a_com = g``) must demand ~zero contact wrench.
 
-* **Kinematics from pose (s.4/s.8).** :func:`body_accelerations` must recover a known
+* **Kinematics from pose (§4/§8).** :func:`body_accelerations` must recover a known
   constant linear acceleration and a known constant angular velocity from a synthetic
   pose trajectory, through the noisy double-differentiation path.
 
-* **The contact-implicit solve (s.8) + the s.7 indeterminacy.**
+* **The contact-implicit solve (§8) + the §7 indeterminacy.**
   :func:`solve_contact_implicit` on a stationary 4-corner box must recover non-negative
   per-corner normal forces summing to ``m*g`` with ~zero residual and all four corners
   active; in flight (large gaps) it must recover ~zero force and an empty active set;
   it must respect the friction cone; and on the symmetric indeterminate load it must
   return the minimum-norm (near-equal, finite) split that the Tikhonov regularizer
-  selects — the honest resolution of the s.7 load-split indeterminacy.
+  selects — the honest resolution of the §7 load-split indeterminacy.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from contact.config import InverseDynamicsParams
-from contact.dynamics_id import (
+from contact.inverse_dynamics import (
     InertialParams,
     body_accelerations,
     contact_wrench_map,
@@ -104,7 +104,7 @@ def _box_wrench_map(pose: PoseTrajectory) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------------------
-# 1. required_wrench: Newton-Euler balance (s.8).
+# 1. required_wrench: Newton-Euler balance (§8).
 # --------------------------------------------------------------------------------------
 
 
@@ -137,7 +137,7 @@ def test_required_wrench_freefall_is_zero():
 
 
 # --------------------------------------------------------------------------------------
-# 2. body_accelerations: recover known accel + angular velocity from a pose (s.4/s.8).
+# 2. body_accelerations: recover known accel + angular velocity from a pose (§4/§8).
 # --------------------------------------------------------------------------------------
 
 
@@ -159,7 +159,7 @@ def test_body_accelerations_recovers_angular_velocity():
     omega_z = 1.25
     # A finer clock + small smoothing keeps the (Gaussian-prefiltered) quaternion
     # derivative from biasing the recovered rate; we still differentiate through the
-    # real, noisy s.4 path, just with the smoothing kept local (s.6).
+    # real, noisy §4 path, just with the smoothing kept local (§6).
     pose = _spin_pose(omega_z, T=120, dt=0.005)
     a_com, alpha, omega = body_accelerations(pose, gravity=GRAVITY, accel_smooth_time=0.01)
 
@@ -173,7 +173,7 @@ def test_body_accelerations_recovers_angular_velocity():
 
 
 # --------------------------------------------------------------------------------------
-# 3. solve_contact_implicit on a synthetic stationary box (s.8).
+# 3. solve_contact_implicit on a synthetic stationary box (§8).
 # --------------------------------------------------------------------------------------
 
 
@@ -255,10 +255,10 @@ def test_solve_contact_implicit_respects_friction_cone():
 
 
 def test_solve_contact_implicit_indeterminate_minimum_norm():
-    """Symmetric 4-corner load is indeterminate (s.7); the regularizer picks min-norm.
+    """Symmetric 4-corner load is indeterminate (§7); the regularizer picks min-norm.
 
     With four corners balancing a single 6-wrench the per-corner split has a null space
-    (s.7). The Tikhonov term ``force_regularization*||f||^2`` selects the unique
+    (§7). The Tikhonov term ``force_regularization*||f||^2`` selects the unique
     minimum-norm member, which for a symmetric load is the near-equal split. We check the
     split is finite, near-equal, and (because min-norm spreads load) lower-norm than an
     asymmetric split that produces the identical net wrench.

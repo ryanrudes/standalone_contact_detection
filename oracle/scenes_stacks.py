@@ -1,8 +1,8 @@
-"""Multi-body SCENES exercising stacking and multi-surface hand-off (THEORY.md s.8).
+"""Multi-body SCENES exercising stacking and multi-surface hand-off (THEORY.md §8).
 
 These are additional multi-body scene demos focused on the
 *contact graph* and, above all, on the **active set as the hidden structure** we infer
-(THEORY.md s.8). A single body pair has one edge; the interesting graph signal is
+(THEORY.md §8). A single body pair has one edge; the interesting graph signal is
 
 * several edges active *simultaneously* (a stack: each box rests on the one below), and
 * the active set *changing in time* (a box toppling off the top of a stack, or sliding
@@ -17,7 +17,7 @@ the physics extraction; we only build the model + the build-dict.
 The mode of every active edge here is STATIC (resting boxes do not slide/roll relative to
 their support while seated) or, transiently, IMPACT (a falling box striking the floor): the
 point of these scenes is the *structure* (which edges are active and when), not per-edge
-mode richness -- exactly the structure-inference target of THEORY.md s.8.
+mode richness -- exactly the structure-inference target of THEORY.md §8.
 """
 
 from __future__ import annotations
@@ -46,12 +46,12 @@ _BOX_HALF = 0.06
 
 @scene("stacked_boxes")
 def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
-    """Three equal boxes stacked on the floor, resting stably (THEORY.md s.8).
+    """Three equal boxes stacked on the floor, resting stably (THEORY.md §8).
 
     Physics: box1 rests on the floor, box2 on box1, box3 on box2, all CoMs aligned over a
     wide common footprint with high friction. Gravity loads each interface; nothing slides
     or tips, so all three edges are sustained STATIC contacts with zero relative twist
-    (THEORY.md s.3). The point of the scene is the *graph*: three candidate edges that are
+    (THEORY.md §3). The point of the scene is the *graph*: three candidate edges that are
     all active at once for the whole run (a small but genuine simultaneous active set).
 
     Stability comes from (a) perfectly aligned centers of mass (each box directly above
@@ -142,7 +142,7 @@ def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
         meta={
             "structure": (
                 "All three edges active simultaneously for the whole run: a stable "
-                "STATIC stack (THEORY.md s.8 -- a small fixed active set over the graph)."
+                "STATIC stack (THEORY.md §8 -- a small fixed active set over the graph)."
             ),
         },
     )
@@ -160,7 +160,7 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
     both STATIC. After a settle, a sustained horizontal world force (``xfrc_applied``) on
     the TOP slab overcomes friction and walks it off the edge of box1; once its CoM passes
     box1's edge it slides off, deactivating the ``box2_box1`` edge, free-falls (FREE), and
-    strikes the floor -- an IMPACT on the new ``box2_floor`` edge (THEORY.md s.6) -- then
+    strikes the floor -- an IMPACT on the new ``box2_floor`` edge (THEORY.md §6) -- then
     settles flat (STATIC). box1 is heavy and stays put, so ``box1_floor`` is STATIC
     throughout.
 
@@ -172,11 +172,11 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
     forever (the detector cannot confirm the landing even though MuJoCo's geom truth sees
     it). A flat, tip-resistant slab pushed just hard enough to clear the edge slides off
     TRANSLATING and lands flat on its large bottom face, so the tracked point stays the
-    contact point and the landing is cleanly observable (THEORY.md s.3: rolling/landing is
+    contact point and the landing is cleanly observable (THEORY.md §3: rolling/landing is
     a property of the tracked material point). This keeps the demo's named phenomenon -- a
     CHANGING active set with a landing impact -- both true AND detectable.
 
-    This is the changing-active-set test of THEORY.md s.8: the true active structure goes
+    This is the changing-active-set test of THEORY.md §8: the true active structure goes
     ``{box1_floor, box2_box1}`` -> (box2 airborne) ``{box1_floor}`` -> (box2 landed)
     ``{box1_floor, box2_floor}``. box1's heavy mass + the floor-level box1 keep the lower
     interface a clean sustained STATIC contact while box2's edges flip.
@@ -277,7 +277,7 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
             "active_set_change": (
                 "{box1_floor, box2_box1} -> {box1_floor} (box2 airborne) -> "
                 "{box1_floor, box2_floor} (box2 lands, an impact). box1 stays put "
-                "(THEORY.md s.8 changing active set + s.6 impact)."
+                "(THEORY.md §8 changing active set + §6 impact)."
             ),
         },
     )
@@ -295,7 +295,7 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     settle a steady horizontal world force overcomes friction and slides the slab toward the
     table edge; once its CoM clears the edge it slides off, free-falls (FREE), and lands on
     the floor below -- a sustained STATIC contact after the landing transient. This is the
-    showcase MULTI-SURFACE hand-off of THEORY.md s.8: the SAME moving body's active edge
+    showcase MULTI-SURFACE hand-off of THEORY.md §8: the SAME moving body's active edge
     migrates from one support to another, with an airborne gap in between, so the active
     set is ``{box_table} -> {} -> {box_floor}``.
 
@@ -308,7 +308,7 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     settles to the documented sustained STATIC. A flat, tip-resistant slab pushed just hard
     enough to clear the edge slides off TRANSLATING and lands FLAT on its large bottom face, so
     the tracked point stays the contact point: ``box_floor`` activates with a short landing
-    transient and then a single sustained STATIC interval (THEORY.md s.3: landing flat is a
+    transient and then a single sustained STATIC interval (THEORY.md §3: landing flat is a
     property of the tracked material point). This keeps the named phenomenon -- a clean
     multi-surface hand-off ending in a flat rest -- both true AND detectable.
 
@@ -405,7 +405,7 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
         meta={
             "hand_off": (
                 "{box_table} -> {} (airborne) -> {box_floor}: a multi-surface hand-off "
-                "of the same body across an airborne gap (THEORY.md s.8). The table top "
+                "of the same body across an airborne gap (THEORY.md §8). The table top "
                 "is 0.30 m up so the fall is long and the active-set change is decisive."
             ),
         },

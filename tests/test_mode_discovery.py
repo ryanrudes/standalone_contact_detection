@@ -1,26 +1,26 @@
-"""Tests for unsupervised contact-mode discovery (THEORY.md section 8).
+"""Tests for unsupervised contact-mode discovery (THEORY.md §8).
 
-``contact.mode_discovery`` is the research-frontier rung of THEORY.md s.8 that the
+``contact.mode_discovery`` is the research-frontier rung of THEORY.md §8 that the
 rest of the package sidesteps: instead of *presupposing* the canonical five modes of
-s.3 (the supervised emission bank of ``contact.emissions``), it fits a **sticky
+§3 (the supervised emission bank of ``contact.emissions``), it fits a **sticky
 HDP-HMM** that *discovers* the mode vocabulary from the raw per-frame twist feature --
 learning *how many* modes a clip needs and which frames belong to each, with no access
 to the canonical names. This suite stresses three claims of that module:
 
 * **The feature is well-formed.** ``mode_feature_vector`` returns the ``(T, 5)`` twist
-  signature ``[gap, |v_n|, |v_t|, |omega_n|, |omega_t|]`` of s.3, finite everywhere.
+  signature ``[gap, |v_n|, |v_t|, |omega_n|, |omega_t|]`` of §3, finite everywhere.
 
 * **Discovery rediscovers the regimes (synthetic).** On a hand-built 3-regime clip
-  (rest -> slide -> spin, the s.3 static/sliding/pivoting archetypes), the model uses
+  (rest -> slide -> spin, the §3 static/sliding/pivoting archetypes), the model uses
   >= 3 distinct modes, the dominant discovered mode in each regime window *aligns* to
   the expected canonical mode (``_align_signature``, validation-only), and -- thanks to
-  the sticky self-transition prior of s.5 -- the labels are piecewise-constant (a small
+  the sticky self-transition prior of §5 -- the labels are piecewise-constant (a small
   number of switches, not a flickering segmentation). The same seed gives identical
-  labels (the Gibbs sampler is seeded; s.8 honesty note).
+  labels (the Gibbs sampler is seeded; §8 honesty note).
 
-* **Discovery runs on MuJoCo truth (s.9).** On ``push_to_slide`` (generate -> observe),
+* **Discovery runs on MuJoCo truth (§9).** On ``push_to_slide`` (generate -> observe),
   discovery runs end to end and finds both a static-aligned and a sliding-aligned mode
-  -- the static->sliding stick/slip regime of s.7 that the scenario builds.
+  -- the static->sliding stick/slip regime of §7 that the scenario builds.
 
 The discovery itself is label-free; the canonical-name ``alignment`` is the post-hoc
 nearest-signature heuristic of ``_align_signature``, used here for validation only.
@@ -63,7 +63,7 @@ _REGIME_FRAMES = 120
 def _three_regime_obs(seed: int = 0) -> ContactObservations:
     """Hand-build a rest -> slide -> spin clip as ``ContactObservations``.
 
-    Three back-to-back contact regimes, each the s.3 archetype of one canonical mode,
+    Three back-to-back contact regimes, each the §3 archetype of one canonical mode,
     built directly in the support-relative contact frame (so no ``observe`` round-trip
     is needed and the planted truth is exact):
 
@@ -73,7 +73,7 @@ def _three_regime_obs(seed: int = 0) -> ContactObservations:
 
     A little Gaussian jitter is added (well below the regime amplitudes) so the
     clusters have non-degenerate spread; the gap stays ~0 throughout so all three are
-    *contact* regimes (the discovery clusters the twist channels, s.3, not free/contact).
+    *contact* regimes (the discovery clusters the twist channels, §3, not free/contact).
     """
     rng = np.random.default_rng(seed)
     n = _REGIME_FRAMES
@@ -126,11 +126,11 @@ def _dominant_label(labels: np.ndarray, lo: int, hi: int) -> int:
 # --------------------------------------------------------------------------------------
 
 def test_mode_feature_vector_shape_and_finite():
-    """``mode_feature_vector`` returns a finite ``(T, 5)`` twist signature (s.3).
+    """``mode_feature_vector`` returns a finite ``(T, 5)`` twist signature (§3).
 
     The clustering feature is the 5-vector of channel magnitudes
     ``[gap, |v_n|, |v_t|, |omega_n|, |omega_t|]`` (gap kept signed -- its sign is the
-    Signorini branch of s.2). It must have one row per frame, five columns, and contain
+    Signorini branch of §2). It must have one row per frame, five columns, and contain
     no NaN/inf (the downstream standardize/Gaussian math would otherwise poison the fit).
     """
     obs = _three_regime_obs(seed=0)
@@ -146,7 +146,7 @@ def test_mode_feature_vector_shape_and_finite():
 
 
 def test_mode_feature_vector_columns_track_planted_channels():
-    """Each regime excites exactly its own feature column (a sanity anchor for s.3).
+    """Each regime excites exactly its own feature column (a sanity anchor for §3).
 
     A cross-check that the feature columns mean what the test below relies on: the slide
     window has a large ``|v_t|`` (column 2) and the spin window a large ``|omega_n|``
@@ -170,15 +170,15 @@ def test_mode_feature_vector_columns_track_planted_channels():
 # --------------------------------------------------------------------------------------
 
 def test_discover_modes_synthetic_three_regimes():
-    """Discovery rediscovers static/sliding/pivoting on the 3-regime clip (s.8).
+    """Discovery rediscovers static/sliding/pivoting on the 3-regime clip (§8).
 
     The sticky HDP-HMM, given only the raw twist feature (no canonical labels), should:
 
     * use **>= 3** distinct discovered modes (one per planted regime, possibly more);
     * have its **dominant** discovered mode in each regime window *align* (via the
       validation-only ``_align_signature``) to that regime's expected canonical mode --
-      static for rest, sliding for slide, pivoting for spin (s.3 archetypes);
-    * produce **piecewise-constant** labels: the sticky self-transition prior (the s.5
+      static for rest, sliding for slide, pivoting for spin (§3 archetypes);
+    * produce **piecewise-constant** labels: the sticky self-transition prior (the §5
       dwell prior in nonparametric clothing) keeps a physical regime from fragmenting,
       so the number of label switches stays small (we allow a little slack above the two
       true regime boundaries, but reject a flickering segmentation).
@@ -205,7 +205,7 @@ def test_discover_modes_synthetic_three_regimes():
 
 
 def test_discover_modes_dominant_label_unique_per_regime():
-    """The three regimes are carried by three *distinct* dominant modes (s.8).
+    """The three regimes are carried by three *distinct* dominant modes (§8).
 
     Beyond aligning to the right canonical name, the dominant discovered id must differ
     across the three windows -- i.e. the model genuinely separated the regimes into
@@ -223,7 +223,7 @@ def test_discover_modes_dominant_label_unique_per_regime():
 
 
 def test_discover_modes_deterministic_same_seed():
-    """Same input + same seed => identical labels (the seeded-Gibbs guarantee, s.8).
+    """Same input + same seed => identical labels (the seeded-Gibbs guarantee, §8).
 
     ``discover_modes`` seeds its blocked-Gibbs sampler from ``seed``; the module's
     docstring promises deterministic output for a fixed input and seed. Two independent
@@ -271,15 +271,15 @@ import oracle  # noqa: E402  (after the skip guard)
 
 
 def test_discover_modes_push_to_slide_finds_static_and_sliding():
-    """Discovery finds static- and sliding-aligned modes on push_to_slide (s.8/s.9).
+    """Discovery finds static- and sliding-aligned modes on push_to_slide (§8/§9).
 
-    ``push_to_slide`` builds the stick->slip guard of s.7: a box rests (STATIC) until a
+    ``push_to_slide`` builds the stick->slip guard of §7: a box rests (STATIC) until a
     ramped horizontal force breaks friction, after which it SLIDES. Handed only the
-    noisy observable channel (generate -> observe, s.9), the unsupervised HDP-HMM should
+    noisy observable channel (generate -> observe, §9), the unsupervised HDP-HMM should
     run end to end and discover *both* a static-aligned and a sliding-aligned mode --
     rediscovering the two physical regimes without being told they exist.
 
-    This is the weakest-claim scenario test by design (s.8 honesty: the diagonal-Gaussian
+    This is the weakest-claim scenario test by design (§8 honesty: the diagonal-Gaussian
     emission on channel magnitudes cleanly separates static vs. sliding, which differ in
     exactly one channel), so we assert only that both aligned modes are present.
     """

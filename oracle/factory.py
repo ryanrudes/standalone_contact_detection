@@ -1,11 +1,11 @@
-"""MuJoCo as the ground-truth oracle (THEORY.md section 9).
+"""MuJoCo as the ground-truth oracle (THEORY.md §9).
 
 This module is the *truth factory* for the whole package. The theory makes claims
 about quantities that are, by design, hard to observe from a mocap rig (the active
 set, the contact mode, the normal force, the penetration). A physics simulator
 makes those quantities visible to *us* — the experimenter — while still letting us
 hand the detector only the "observable" channel (noisy body poses). That is exactly
-the workflow of THEORY.md s.9:
+the workflow of THEORY.md §9:
 
     simulate -> record the full physical truth -> expose only noisy pose streams
     -> later score the inferred posterior against the withheld truth.
@@ -13,28 +13,28 @@ the workflow of THEORY.md s.9:
 Everything here is headless physics only: we step `mujoco.mj_step` and read state
 arrays. There is NO rendering and no GL context.
 
-What we extract every recorded frame (THEORY.md s.9 bullet 1):
+What we extract every recorded frame (THEORY.md §9 bullet 1):
 
 * body poses              : ``data.xpos`` / ``data.xquat`` for the moving body and
                             the support body (the cart for ``moving_support``,
                             otherwise an identity/world trajectory).
 * the true active set     : iterate ``data.contact[:data.ncon]`` and keep the
                             contact between the moving geom and the support geom.
-* penetration             : ``max(0, -contact.dist)`` (THEORY.md s.2: rigid bodies
+* penetration             : ``max(0, -contact.dist)`` (THEORY.md §2: rigid bodies
                             cannot truly interpenetrate, so this is the simulator's
-                            compliant squish, our calibrated force gauge in s.7).
+                            compliant squish, our calibrated force gauge in §7).
 * normal force            : ``mj_contactForce(...)[0]`` — the normal component in
-                            the contact frame (THEORY.md s.7: the Lagrange
+                            the contact frame (THEORY.md §7: the Lagrange
                             multiplier that pure kinematics cannot recover).
 * mode                    : from the *relative* twist of the material contact point
-                            (THEORY.md s.3: a mode is the twist subspace the relative
+                            (THEORY.md §3: a mode is the twist subspace the relative
                             motion lives in). Documented thresholds below.
 
 The detector never sees this module's truth labels — only ``RawScenario.moving`` /
 ``.support`` / ``.surface`` (the noisy observable channel) flow into
 ``geometry.observe``. The labels are withheld for scoring.
 
-One disciplined caveat (THEORY.md s.9): MuJoCo's truth is truth *for MuJoCo's
+One disciplined caveat (THEORY.md §9): MuJoCo's truth is truth *for MuJoCo's
 contact model* (soft convex constraints, a pyramidal friction cone). It validates
 the estimator's logic and identifiability, not absolute physical fidelity.
 """
@@ -65,7 +65,7 @@ from contact.types import (
 )
 
 # --------------------------------------------------------------------------------------
-# Mode-labeling thresholds (THEORY.md section 3).
+# Mode-labeling thresholds (THEORY.md §3).
 #
 # A contact mode is *which subspace of the 6D relative twist the motion lives in*. We
 # classify each in-contact frame by the relative twist of the MATERIAL point currently
@@ -89,7 +89,7 @@ def _object_twist_world(model: mujoco.MjModel, data: mujoco.MjData, body_id: int
     """World-frame spatial velocity of a body: (omega (3,), v_com (3,)).
 
     ``mj_objectVelocity`` returns the 6-vector [angular(3); linear(3)] of the body's
-    *origin/com* expressed in the world frame (flg_local=0). THEORY.md s.3: the right
+    *origin/com* expressed in the world frame (flg_local=0). THEORY.md §3: the right
     feature is the relative twist, kept as a vector so channel correlations survive.
     """
     buf = np.zeros(6)
@@ -104,7 +104,7 @@ def _material_point_velocity(
 ) -> np.ndarray:
     """World velocity of the body's material point currently at ``contact_pos``.
 
-    v_point = v_com + omega x (contact_pos - body_pos). THEORY.md s.3: rolling vs.
+    v_point = v_com + omega x (contact_pos - body_pos). THEORY.md §3: rolling vs.
     sliding is separated by the velocity of the *material point at the contact*, not
     the COM velocity — a rolling wheel's COM moves while its contact point is
     instantaneously at rest.
@@ -114,7 +114,7 @@ def _material_point_velocity(
 
 
 def _body_inertial(model: mujoco.MjModel, body_id: int) -> dict:
-    """Inertial properties of a body in its OWN (body-origin) frame (THEORY.md s.8).
+    """Inertial properties of a body in its OWN (body-origin) frame (THEORY.md §8).
 
     Contact-implicit inverse dynamics needs the Newton-Euler mass matrix: the scalar mass,
     the 3x3 rotational inertia, and the center of mass. MuJoCo stores these w.r.t. the
@@ -146,7 +146,7 @@ def _world_to_body_local(
 
     p_local = R(quat)^T @ (p_world - body_pos), with the scalar-first quaternion rotated
     by ``mju_rotVecQuat`` after conjugation. Used to match each multi-contact point to
-    the box corner it sits under (THEORY.md s.7 / s.8: a contact's material location on
+    the box corner it sits under (THEORY.md §7 / §8: a contact's material location on
     the body is how we attribute a per-corner load to a per-corner penetration).
     """
     rel = np.asarray(point_world, dtype=float) - np.asarray(body_pos, dtype=float)
@@ -171,19 +171,19 @@ def _classify_mode(
     com_tan_speed: float,
     shape: str,
 ) -> str:
-    """Label one frame's contact mode from its relative twist (THEORY.md section 3).
+    """Label one frame's contact mode from its relative twist (THEORY.md §3).
 
     A mode is the subspace of the 6D relative twist the motion lives in:
 
     * not in contact                              -> FREE.
-    * |relative normal velocity| large            -> IMPACT (transient, THEORY.md s.6).
+    * |relative normal velocity| large            -> IMPACT (transient, THEORY.md §6).
     * sphere, ~0 material-point slip but COM moves -> ROLLING (v coupled to omega).
     * tangential slip of the material point large  -> SLIDING.
     * spin about the normal dominant               -> PIVOTING.
     * otherwise                                    -> STATIC (twist ~ 0).
 
     ``slip_tan`` is the tangential speed of the *material contact point* (the rigorous
-    rolling/sliding discriminator of s.3), while ``com_tan_speed`` is the COM tangential
+    rolling/sliding discriminator of §3), while ``com_tan_speed`` is the COM tangential
     speed used only to recognize that a low-slip sphere is actually rolling (not at rest).
     """
     if not in_contact:
@@ -231,7 +231,7 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
 
     shape = spec.shape
 
-    # --- multi-contact (indeterminate rig) per-corner harvesting setup (THEORY.md s.7) ---
+    # --- multi-contact (indeterminate rig) per-corner harvesting setup (THEORY.md §7) ---
     # When this scenario is the statically-indeterminate rig, we additionally record, for
     # each of the K box corners, its penetration and normal force every frame. We match a
     # contact to a corner by transforming contact.pos into the BOX local frame and taking
@@ -246,12 +246,12 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
     corner_pen: list[np.ndarray] = []   # per frame: (K,) penetration
     corner_fn: list[np.ndarray] = []    # per frame: (K,) normal force
 
-    # --- contact-implicit inverse-dynamics candidate harvesting (THEORY.md s.8 north star) ---
+    # --- contact-implicit inverse-dynamics candidate harvesting (THEORY.md §8 north star) ---
     # For a single rigid box contacting a plane we expose, per box-bottom corner, the data the
     # inverse-dynamics layer needs to recover the per-corner forces and check them against the
-    # MuJoCo truth: the SIGNED support-relative gap (s.1/s.2 -- distinct from the rig's >=0
+    # MuJoCo truth: the SIGNED support-relative gap (§1/§2 -- distinct from the rig's >=0
     # penetration), the TRUE per-corner normal force (matched to the nearest corner), and an
-    # ACTIVE flag (Signorini: a corner carries force only where its gap is closed, s.2). Gaps
+    # ACTIVE flag (Signorini: a corner carries force only where its gap is closed, §2). Gaps
     # are computed support-relative against the (possibly moving) plane via `plane_gap`, exactly
     # the gap channel the detector itself sees (geometry.observe). The contact normal is the
     # plane outward normal carried into the box-local frame each frame (documented choice).
@@ -298,7 +298,7 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
         sup_pos.append(data.xpos[support_body].copy())
         sup_quat.append(data.xquat[support_body].copy())
 
-        # --- scan the true active set for the moving<->support contact (THEORY.md s.9) ---
+        # --- scan the true active set for the moving<->support contact (THEORY.md §9) ---
         found = False
         f_n = 0.0
         pen = 0.0
@@ -325,7 +325,7 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
 
             # Attribute this point contact to its box corner (indeterminate rig only):
             # transform contact.pos into the box local frame and pick the nearest listed
-            # corner in the tangent (x,y) plane (THEORY.md s.7: the per-corner penetration
+            # corner in the tangent (x,y) plane (THEORY.md §7: the per-corner penetration
             # is the gauge that pins the per-corner force the kinematics cannot give us).
             if rig_corners_local is not None:
                 p_local = _world_to_body_local(
@@ -339,7 +339,7 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
                 frame_corner_pen[k] = max(frame_corner_pen[k], c_pen)
 
             # Attribute this point contact's TRUE normal force to its nearest candidate
-            # corner for the inverse-dynamics view (THEORY.md s.8): same box-local nearest-
+            # corner for the inverse-dynamics view (THEORY.md §8): same box-local nearest-
             # corner match as above, but kept independent so it runs for every box-on-plane
             # scenario (not just the rig). Sub-contacts on the same corner accumulate.
             if box_corners_local is not None:
@@ -351,7 +351,7 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
 
             # Contact frame: rows of c.frame are (normal, tangent1, tangent2). The
             # relative twist is measured in THIS support-attached frame (types.py /
-            # THEORY.md s.1).
+            # THEORY.md §1).
             cframe = np.array(c.frame).reshape(3, 3)
             n_hat = cframe[0]
             t1, t2 = cframe[1], cframe[2]
@@ -397,13 +397,13 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
             corner_pen.append(frame_corner_pen)
             corner_fn.append(frame_corner_fn)
 
-        # --- candidate-corner signed gap + normal in box-local frame (THEORY.md s.8) ---
+        # --- candidate-corner signed gap + normal in box-local frame (THEORY.md §8) ---
         if box_corners_local is not None:
             # World position of each corner this frame: box origin + R(box) @ corner_local.
             R_box = quat_to_matrix(data.xquat[moving_body])          # (3,3) box-local -> world
             corners_world = data.xpos[moving_body] + box_corners_local @ R_box.T  # (K,3)
             # Plane carried into the world via the (possibly moving) support pose, then the
-            # SIGNED gap of each corner -- exactly the support-relative gap of s.1/s.2.
+            # SIGNED gap of each corner -- exactly the support-relative gap of §1/§2.
             R_sup = quat_to_matrix(data.xquat[support_body])         # (3,3) support-local -> world
             plane_pt_w = data.xpos[support_body] + R_sup @ surf_pt_local   # (3,)
             normal_w = R_sup @ surf_n_local                          # (3,) world plane normal
@@ -428,13 +428,13 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
     }
     if rig_corners_local is not None:
         # Stack to (K, T): K corners (rows) over T recorded frames (columns), exactly the
-        # shape meta["contact_points"] promises (THEORY.md s.7 observability arrays).
+        # shape meta["contact_points"] promises (THEORY.md §7 observability arrays).
         out["corner_penetration"] = np.asarray(corner_pen, dtype=float).T  # (K, T)
         out["corner_normal_force"] = np.asarray(corner_fn, dtype=float).T  # (K, T)
         out["corners_local"] = rig_corners_local                          # (K, 3)
     if box_corners_local is not None:
         # Inverse-dynamics candidate arrays, all (K, T) over the recorded frames (THEORY.md
-        # s.8): SIGNED gap, true per-corner normal force, and the Signorini active flag, plus
+        # §8): SIGNED gap, true per-corner normal force, and the Signorini active flag, plus
         # the static (K,3) candidate points and their (K,T,3) box-local contact normals.
         out["cand_points_local"] = box_corners_local                       # (K, 3)
         out["cand_gap"] = np.asarray(cand_gap, dtype=float).T               # (K, T)
@@ -452,7 +452,7 @@ def _simulate(spec: ScenarioSpec, hz: float) -> dict:
 def generate(
     name: str, seed: int = 0, hz: float = 100.0, noise_m: float = 5e-4
 ) -> RawScenario:
-    """Build, simulate, and label one scenario (THEORY.md section 9).
+    """Build, simulate, and label one scenario (THEORY.md §9).
 
     Parameters
     ----------
@@ -465,7 +465,7 @@ def generate(
         the nearest multiple of ``1/hz``.
     noise_m:
         Standard deviation (m) of the i.i.d. Gaussian position noise added to the
-        RECORDED moving-body positions, emulating optical mocap. THEORY.md s.4/s.9:
+        RECORDED moving-body positions, emulating optical mocap. THEORY.md §4/§9:
         the detector only ever sees this noisy "observable channel"; the truth labels
         come from the CLEAN simulator state, never from the noised poses.
 
@@ -478,7 +478,7 @@ def generate(
 
     Note
     ----
-    Headless physics only — no rendering. See THEORY.md s.9 on the simulate -> record
+    Headless physics only — no rendering. See THEORY.md §9 on the simulate -> record
     truth -> expose only noisy poses workflow.
     """
     if name not in SCENARIO_BUILDERS:
@@ -494,7 +494,7 @@ def generate(
     rec = _simulate(spec, rec_hz)
 
     # --- emulate mocap: additive Gaussian noise on the RECORDED moving positions only.
-    # (THEORY.md s.4: we observe noisy marker positions; velocities come from
+    # (THEORY.md §4: we observe noisy marker positions; velocities come from
     #  differentiating these, which is why the detector must reason probabilistically.)
     rng = np.random.default_rng(seed)
     noisy_mov_pos = rec["mov_pos"] + rng.normal(0.0, noise_m, size=rec["mov_pos"].shape)
@@ -534,15 +534,15 @@ def generate(
         },
         "note": (
             "MuJoCo truth is truth for MuJoCo's soft-constraint contact model "
-            "(THEORY.md s.9). Truth labels come from clean sim state; only moving "
+            "(THEORY.md §9). Truth labels come from clean sim state; only moving "
             "positions are noised to emulate mocap."
         ),
     }
 
-    # --- contact-implicit inverse-dynamics metadata (THEORY.md s.8, the north star) ---
+    # --- contact-implicit inverse-dynamics metadata (THEORY.md §8, the north star) ---
     # For a single rigid box contacting a plane we expose the inertial mass matrix and the
-    # candidate point-contacts (the box corners) so dynamics_id can recover the per-corner
-    # forces under Newton-Euler + Signorini (s.2) + the friction cone (s.7) and compare to
+    # candidate point-contacts (the box corners) so inverse_dynamics can recover the per-corner
+    # forces under Newton-Euler + Signorini (§2) + the friction cone (§7) and compare to
     # the MuJoCo truth. Only emitted for the box-on-plane scenarios that carry corner data.
     if spec.box_corners_local is not None:
         moving_body_id = _id(spec.model, mujoco.mjtObj.mjOBJ_BODY, spec.moving_body)
@@ -556,26 +556,26 @@ def generate(
             # moving_support it tracks the (level) cart deck). Shape (K, T, 3).
             "normals_local": rec["cand_normals_local"],   # (K, T, 3)
             # SIGNED support-relative distance of each corner to the plane (m); >0 separation,
-            # <0 penetration (THEORY.md s.1/s.2) -- distinct from the rig's >=0 penetration.
+            # <0 penetration (THEORY.md §1/§2) -- distinct from the rig's >=0 penetration.
             "gap": rec["cand_gap"],                        # (K, T)
             # TRUE per-corner normal force from MuJoCo, each sub-contact matched to its nearest
             # corner (the truth the recovered forces are scored against). Summed over corners
             # equals the box weight m*g at rest.
             "normal_force": rec["cand_normal_force"],      # (K, T)
-            # Signorini active set: a corner carries force only where its gap is closed (s.2).
+            # Signorini active set: a corner carries force only where its gap is closed (§2).
             "active": rec["cand_active"],                  # (K, T) bool
         }
 
-    # --- statically-indeterminate rig: expose the per-corner observability arrays (s.7) ---
+    # --- statically-indeterminate rig: expose the per-corner observability arrays (§7) ---
     if spec.rig_corners_local is not None:
         pen_kt = rec["corner_penetration"]   # (K, T) penetration per corner per frame
         fn_kt = rec["corner_normal_force"]   # (K, T) normal force per corner per frame
         corners = rec["corners_local"]       # (K, 3) corner positions in box-local frame
 
-        # Effective contact stiffness k_eff (N/m). Per s.7 the penetration depth is a
+        # Effective contact stiffness k_eff (N/m). Per §7 the penetration depth is a
         # calibrated force gauge f = k * delta; we IDENTIFY k by the least-squares slope
         # of force vs. penetration, i.e. exactly the "trace the penetration-force slope"
-        # persistent-excitation reading of s.7. We fit over the QUIET, SETTLED tail (the
+        # persistent-excitation reading of §7. We fit over the QUIET, SETTLED tail (the
         # last quarter of the run) where the velocity-dependent damper term b*delta_dot
         # has died out, so the measured force is the pure spring f = k*delta -- otherwise
         # the touchdown transient (where f leads delta) corrupts the slope. The
@@ -601,7 +601,7 @@ def generate(
             "K=%d vertical corner-force unknowns vs 3 static balance equations "
             "(sum F_z, sum M_x, sum M_y) => statically indeterminate; load split "
             "unobservable from kinematics, identifiable only via per-corner penetration "
-            "under known compliance (THEORY.md s.7)." % int(pen_kt.shape[0])
+            "under known compliance (THEORY.md §7)." % int(pen_kt.shape[0])
         )
 
     # --- optional per-scenario contact-geometry resolver (DESIGN.md III.1 / PHASE 2) ---
@@ -626,10 +626,10 @@ def generate(
 
 
 # ======================================================================================
-# Multi-body SCENES (THEORY.md section 8: the contact graph + active-set structure).
+# Multi-body SCENES (THEORY.md §8: the contact graph + active-set structure).
 #
 # Everything above produces a single body-PAIR (`RawScenario`, one `GroundTruth`). The
-# theory's final object (s.8) is richer: the hidden thing we infer is a *structure* over
+# theory's final object (§8) is richer: the hidden thing we infer is a *structure* over
 # a CONTACT GRAPH whose nodes are bodies and whose edges are candidate body-pair contacts
 # (person<->deck, deck<->ground, hand<->rail), and we want a posterior over *which* edges
 # are active. A scene therefore carries SEVERAL bodies sharing one time base and a LIST of
@@ -637,14 +637,14 @@ def generate(
 # edge by edge and as a joint active set.
 #
 # These generators reuse the same headless simulate->extract path as the single-pair ones
-# (THEORY.md s.9): we step the physics, record CLEAN poses for every body, scan the true
+# (THEORY.md §9): we step the physics, record CLEAN poses for every body, scan the true
 # active set per edge (the relevant geom pair[s]), and label each frame's per-edge
 # existence / penetration / normal force / mode exactly as `_simulate` does for one pair.
 # Only the moving body's recorded positions are noised downstream-free here (the scene
 # carries clean truth; a separate observable-channel noising is the integrator's job, as
 # for `generate`). The contracts (ContactEdge / MultiBodyScene) live in contact.types.
 #
-# Tractability note (THEORY.md s.8): exact joint inference enumerates the 2^E active sets;
+# Tractability note (THEORY.md §8): exact joint inference enumerates the 2^E active sets;
 # these scenes keep E <= 2, so that is trivially exact. Large E would need RJMCMC/particle
 # methods -- not these generators' concern, but stated for honesty.
 # ======================================================================================
@@ -721,7 +721,7 @@ def _edge_frame_truth(
     buf6: np.ndarray,
     mode_body_id: int | None = None,
 ) -> tuple[bool, float, float, str]:
-    """Extract one edge's per-frame truth by scanning the active set (THEORY.md s.9).
+    """Extract one edge's per-frame truth by scanning the active set (THEORY.md §9).
 
     Mirrors the single-pair scan inside `_simulate`, but matched against a SET of moving
     geoms vs a SET of support geoms (so e.g. the board<->ground edge aggregates all four
@@ -729,7 +729,7 @@ def _edge_frame_truth(
     this edge at the current ``data`` state. The mode is classified from the RELATIVE
     material-point twist in the contact frame, exactly as `_classify_mode` expects.
 
-    Which body's material point is used for the mode classification matters (THEORY.md s.3:
+    Which body's material point is used for the mode classification matters (THEORY.md §3:
     rolling vs sliding is a property of the *tracked material point*, not the contact):
 
     * ``mode_body_id is None`` (default): use the body that OWNS the contacting moving geom.
@@ -744,7 +744,7 @@ def _edge_frame_truth(
       so its truth mode must be classified from the board too, or truth (wheel = rolling) and
       observation (board = sliding) would describe different bodies and disagree by
       construction. Tracking a board-fixed point IS sliding; the wheels' rolling is a
-      separate, un-tracked fact (THEORY.md s.3).
+      separate, un-tracked fact (THEORY.md §3).
     """
     found = False
     f_n = 0.0
@@ -765,14 +765,14 @@ def _edge_frame_truth(
         f_n += float(buf6[0])  # normal component in the contact frame
 
         # Contact frame rows are (normal, tangent1, tangent2); the relative twist is
-        # measured in this support-attached frame (THEORY.md s.1).
+        # measured in this support-attached frame (THEORY.md §1).
         cframe = np.array(c.frame).reshape(3, 3)
         n_hat = cframe[0]
         t1, t2 = cframe[1], cframe[2]
         cpos = np.array(c.pos)
 
         # Relative twist of the moving body's material point w.r.t. the support's, taken at
-        # the contact location (THEORY.md s.3: rolling vs sliding needs the velocity of the
+        # the contact location (THEORY.md §3: rolling vs sliding needs the velocity of the
         # MATERIAL point at the contact, not the COM). Use the body that actually OWNS the
         # contacting moving geom -- not the nominal edge moving body -- because the contact
         # may live on a freely-moving SUB-body (e.g. a skateboard's hinge-jointed wheel
@@ -812,7 +812,7 @@ def _edge_frame_truth(
 def _simulate_scene(spec: SceneSpec, hz: float) -> dict:
     """Run the headless multi-body sim and return clean per-body poses + per-edge truth.
 
-    Same simulate->record loop as `_simulate` (THEORY.md s.9), generalized to N bodies and
+    Same simulate->record loop as `_simulate` (THEORY.md §9), generalized to N bodies and
     a LIST of edges. Records, per recorded frame: each named body's clean pose, and for
     every edge its existence / normal force / penetration / mode (from the active-set scan).
     Supports an optional ``settle`` phase followed by a one-shot ``launch`` (used to give
@@ -932,13 +932,13 @@ def _simulate_scene(spec: SceneSpec, hz: float) -> dict:
 def generate_scene(
     name: str, seed: int = 0, hz: float = 100.0, noise_m: float = 5e-4
 ) -> MultiBodyScene:
-    """Build, simulate, and label one multi-body SCENE (THEORY.md section 8).
+    """Build, simulate, and label one multi-body SCENE (THEORY.md §8).
 
     The scene-level analogue of :func:`generate`: instead of one body pair it produces a
     whole CONTACT GRAPH -- several bodies sharing a time base and a list of candidate
     ``ContactEdge`` s with a per-edge ``GroundTruth``. The graph layer runs the single-pair
     detector per edge (in each support's frame) and fuses the edges into a joint active-set
-    posterior over the 2^E structures (THEORY.md s.8; exact enumeration is fine here since
+    posterior over the 2^E structures (THEORY.md §8; exact enumeration is fine here since
     every scene keeps E <= 2 -- large E would need RJMCMC/particle methods).
 
     Parameters
@@ -951,7 +951,7 @@ def generate_scene(
         Recording rate; the physics runs at the model timestep, subsampled to ~``1/hz``.
     noise_m:
         Std (m) of i.i.d. Gaussian position noise added to every body's recorded world
-        positions, emulating optical mocap (THEORY.md s.4/s.9). Truth labels come from the
+        positions, emulating optical mocap (THEORY.md §4/§9). Truth labels come from the
         CLEAN simulator state and are never derived from the noised poses.
 
     Returns
@@ -965,9 +965,9 @@ def generate_scene(
 
     Note
     ----
-    Headless physics only -- no rendering (THEORY.md s.9). Each edge's ``support_body`` is a
+    Headless physics only -- no rendering (THEORY.md §9). Each edge's ``support_body`` is a
     key into ``bodies`` *except* "world", which the per-edge geometry path treats as an
-    identity pose (a static floor is the s.1 degenerate support of infinite mass).
+    identity pose (a static floor is the §1 degenerate support of infinite mass).
     """
     if name not in SCENE_BUILDERS:
         raise KeyError(f"unknown scene {name!r}; available: {sorted(SCENE_BUILDERS)}")
@@ -985,7 +985,7 @@ def generate_scene(
     t = rec["t"]
 
     # --- emulate mocap: additive Gaussian noise on every body's recorded positions ---
-    # (THEORY.md s.4: the detector only ever sees this noisy observable channel; the
+    # (THEORY.md §4: the detector only ever sees this noisy observable channel; the
     #  per-edge truth labels below come from the clean sim state, not the noised poses.)
     bodies: dict[str, PoseTrajectory] = {}
     for n, p in rec["pos"].items():
@@ -1039,9 +1039,9 @@ def generate_scene(
         },
         "note": (
             "MuJoCo truth is truth for MuJoCo's soft-constraint contact model "
-            "(THEORY.md s.9). Per-edge truth labels come from the clean sim active set; "
+            "(THEORY.md §9). Per-edge truth labels come from the clean sim active set; "
             "only body positions are noised to emulate mocap. The 'world' support is an "
-            "identity pose (the s.1 degenerate static floor)."
+            "identity pose (the §1 degenerate static floor)."
         ),
     }
     meta.update(spec.meta)

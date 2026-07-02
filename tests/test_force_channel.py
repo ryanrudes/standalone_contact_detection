@@ -30,7 +30,7 @@ pytest.importorskip("mujoco")  # the virtual-sensor test runs the MuJoCo harness
 
 import oracle  # noqa: E402
 from contact.config import DetectorConfig, EmissionParams, ForceEmissionParams  # noqa: E402
-from contact.dynamics_id import infer_normal_force  # noqa: E402
+from contact.inverse_dynamics import infer_normal_force  # noqa: E402
 from contact.emissions import (  # noqa: E402
     _force_log_density,
     _log_half_normal,

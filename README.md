@@ -44,7 +44,7 @@ Three things live here:
 - **The [`contact/`](contact/) package** — the implementation of both, validated against
   physics ground truth from MuJoCo.
 
-The original single-file toy ([main.py](main.py)) is kept as "rung 0" — the rudimentary
+The original single-file toy ([rung0/](rung0/)) is kept as "rung 0" — the rudimentary
 chi-squared detector the theory critiques and supersedes.
 
 ## The model in one breath
@@ -92,6 +92,15 @@ See THEORY.md for the rationale behind every clause above.
 
 ## Package layout
 
+Two packages, one import law — **`oracle` imports `contact`; `contact` never imports
+`oracle`** (nor mujoco/matplotlib: the estimator is numpy/scipy). That boundary *is* the
+experiment's epistemology: truth is manufactured and spent on one side, and the detector
+on the other side cannot see it. The law is machine-checked
+([`tests/test_import_law.py`](tests/test_import_law.py)), as is this table
+([`tests/test_readme_table.py`](tests/test_readme_table.py)).
+
+**[`contact/`](contact/) — the estimator** (consumes noisy poses, returns posteriors):
+
 | module | role | THEORY.md |
 |---|---|---|
 | [`contact/types.py`](contact/types.py) | shared data contracts | — |
@@ -100,23 +109,44 @@ See THEORY.md for the rationale behind every clause above.
 | [`contact/geometry.py`](contact/geometry.py) | body-pair → support-relative gap + twist (the resolver narrow waist) | §1, §3 |
 | [`contact/geometry_resolvers.py`](contact/geometry_resolvers.py) | contact-geometry fidelity ladder: `FlatRegion` / `SpherePlane` / `SphereSphere` / `BoxPlane` / `MeshPlane` / `MeshConvex` | DESIGN |
 | [`contact/mesh_collision.py`](contact/mesh_collision.py) | convex collision (signed distance + penetration) via [`coal`](https://github.com/coal-library/coal) | DESIGN §3 |
-| [`contact/emissions.py`](contact/emissions.py) | the contact modes as generative models: `ContactMode` → `Free`/`Static`/`Sliding`/`Pivoting`/`Rolling`/`Impact` (rolling coupling; optional force factor) | §3, §4 |
-| [`contact/hmm.py`](contact/hmm.py) | the `HMM` engine (a `TemporalSmoother`): log-space forward–backward + Viterbi | §5 |
+| [`contact/emissions.py`](contact/emissions.py) | the contact modes as generative models: `Density` primitives → `ContactMode` compositions → `EmissionFactor` sums (rolling coupling; optional force factor) | §3, §4 |
+| [`contact/hmm.py`](contact/hmm.py) | the `HMM` engine (a `TemporalSmoother`): log-space forward–backward + Viterbi, delegated to [`markovlib`](markovlib/) | §5 |
 | [`contact/transitions.py`](contact/transitions.py) | gap-gated, state-dependent transition tensors | §5 |
-| [`contact/hsmm.py`](contact/hsmm.py) | the `SemiMarkovHMM` engine: explicit-duration (semi-Markov) decoding | §5 |
+| [`contact/hsmm.py`](contact/hsmm.py) | the `SemiMarkovHMM` engine: explicit-duration (semi-Markov) decoding, delegated to [`markovlib`](markovlib/) | §5 |
 | [`contact/events.py`](contact/events.py) | sub-frame touchdown / liftoff detection | §6 |
 | [`contact/impacts.py`](contact/impacts.py) | matched-filter impacts, restitution, force-as-measure | §6 |
 | [`contact/dynamics.py`](contact/dynamics.py) | friction cone, force-from-penetration, observability demo | §7 |
-| [`contact/model.py`](contact/model.py) | `ContactDetector`: EM calibration + `HMM`/`SemiMarkovHMM` assembly | §5, §7 |
+| [`contact/detector.py`](contact/detector.py) | `ContactDetector`: EM calibration + `HMM`/`SemiMarkovHMM` assembly | §5, §7 |
 | [`contact/graph.py`](contact/graph.py) | multi-body contact graph + active-set inference | §8 |
 | [`contact/consistency.py`](contact/consistency.py) | soft energy/dissipation + balance priors | §8 |
 | [`contact/structure_inference.py`](contact/structure_inference.py) | `StructurePosterior`: exact + particle-filter active-set posterior (the multi-body analog of `HMM`) | §8 |
 | [`contact/mode_discovery.py`](contact/mode_discovery.py) | sticky HDP-HMM unsupervised mode discovery | §8 |
 | [`contact/uncertainty.py`](contact/uncertainty.py) | per-frame measurement-uncertainty tempering | §8 |
-| [`contact/dynamics_id.py`](contact/dynamics_id.py) | contact-implicit inverse dynamics + `infer_normal_force` (the force virtual sensor) | §8, DESIGN |
+| [`contact/inverse_dynamics.py`](contact/inverse_dynamics.py) | contact-implicit inverse dynamics + `infer_normal_force` (the force virtual sensor) | §8, DESIGN |
 | [`contact/capabilities.py`](contact/capabilities.py) | capability registry (`detect_pair`) + value-of-information | DESIGN |
-| [`contact/mujoco_gen.py`](contact/mujoco_gen.py) | MuJoCo ground-truth scenario / scene factory | §9 |
-| [`contact/report.py`](contact/report.py) | scoring, terminal report, plotting | — |
+
+**[`oracle/`](oracle/) — the experimenter's side** (manufactures truth, withholds it,
+spends it on scoring and pictures):
+
+| module | role | THEORY.md |
+|---|---|---|
+| [`oracle/factory.py`](oracle/factory.py) | the truth machinery: simulate → label → extract; `generate` / `generate_scene` | §9 |
+| [`oracle/registry.py`](oracle/registry.py) | the `@scenario` / `@scene` name registry builders self-register into | §9 |
+| [`oracle/specs.py`](oracle/specs.py) | `ScenarioSpec` / `SceneSpec` / `EdgeSpec` — the typed contract a builder returns | §9 |
+| [`oracle/scenarios_core.py`](oracle/scenarios_core.py) | the seven canonical single-pair scenarios (drop/rest, slide, roll, bounce, moving support, §7 rig) | §9 |
+| [`oracle/scenarios_motion.py`](oracle/scenarios_motion.py) | mode-rich scenarios: incline slide, skid-to-rest, spinning top, tumbling box | §9 |
+| [`oracle/scenarios_impacts.py`](oracle/scenarios_impacts.py) | impact-regime scenarios: hard drop, bounce train, angled impact, incline impact | §6, §9 |
+| [`oracle/scenes_graph.py`](oracle/scenes_graph.py) | the founding contact-graph scenes: person-on-skateboard, box-on-two-blocks | §8 |
+| [`oracle/scenes_stacks.py`](oracle/scenes_stacks.py) | stacks & hand-offs: stacked boxes, stack topple, box off table | §8 |
+| [`oracle/scenes_chains.py`](oracle/scenes_chains.py) | chained impacts: two balls collide, dominoes, Newton's cradle | §6, §8 |
+| [`oracle/synthetic.py`](oracle/synthetic.py) | the analytic (no-simulator) drop→rest→liftoff truth factory | §9 |
+| [`oracle/report.py`](oracle/report.py) | scoring, terminal report, plotting | §9 |
+| [`oracle/verification.py`](oracle/verification.py) | expectation checks: each demo's physically-expected story, asserted | §9 |
+| [`oracle/visualize.py`](oracle/visualize.py) | the synced side-by-side videos (`viz.py`'s engine) | — |
+
+(The original chi-squared toy the theory dismantles lives in [`rung0/`](rung0/);
+[`markovlib/`](markovlib/) is the vendored general Markov-inference library the engines
+delegate to, developed in its own repo.)
 
 ## Run it
 
@@ -148,16 +178,22 @@ structure:
 The detector sees only noisy marker poses; MuJoCo's true contacts, forces, penetration,
 and modes are withheld and used only to score.
 
-Programmatic use:
+Programmatic use — the import line *is* the experiment's structure (truth from `oracle`,
+inference from `contact`, labels crossing back only at scoring):
 
 ```python
-from contact import generate, observe, ContactDetector
+from contact import ContactDetector, observe
+from oracle import generate, score
 
-raw = generate("push_to_slide")
+raw = generate("push_to_slide")                      # oracle: simulate + label (truth withheld)
 obs = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local)
-result = ContactDetector().detect(obs)
+result = ContactDetector().detect(obs)               # contact: sees only the noisy poses
+score(result, raw.truth)                             # oracle: the labels come back out here
 # result.contact_posterior, result.map_state, result.intervals, result.events, ...
 ```
+
+No simulator handy? `oracle.synthetic_drop_rest_liftoff()` builds the canonical
+free-fall → impact → rest → liftoff clip analytically and plugs into the same three lines.
 
 ## Watch it
 
@@ -207,7 +243,7 @@ uv run python verify_demos.py       # the expectation report (PASS / WARN / FAIL
 ```
 
 Unit tests cover the math (HMM recursions, emission densities, the relative-frame
-geometry, differentiation). **Expectation checks** ([`contact/verification.py`](contact/verification.py))
+geometry, differentiation). **Expectation checks** ([`oracle/verification.py`](oracle/verification.py))
 encode each demo's physically-expected contact/mode story — e.g. `push_to_slide` must go
 static→sliding, `box_off_table` must hand off `{table}→{}→{floor}`, `moving_support` must
 read *static* despite 1.4 m of world motion, the cradle must be *suspended* with the
@@ -255,7 +291,7 @@ shape, behind one narrow waist (`observe(..., geometry=…)`):
 
 **Axis 2 — force.** An optional `normal_force` observation channel + a per-state force emission
 (free half-normal / contact mixture / impact spike), fed either by a **measured** sensor or an
-**inferred** virtual sensor ([`dynamics_id.infer_normal_force`](contact/dynamics_id.py), recovered
+**inferred** virtual sensor ([`inverse_dynamics.infer_normal_force`](contact/inverse_dynamics.py), recovered
 from kinematics + inertials with *no* sensor — corr ≈0.94 vs truth). This is the only thing that
 recovers **force-mediated contacts kinematics cannot see** — the Newton's-cradle clacks (~0
 relative velocity, sharp force pulse). Try it: `uv run python viz.py newtons_cradle --pairs --force`.

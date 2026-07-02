@@ -1,8 +1,8 @@
-"""Tests for the s.8 RESEARCH-FRONTIER scaling + uncertainty layer.
+"""Tests for the §8 RESEARCH-FRONTIER scaling + uncertainty layer.
 
-THEORY.md section 8 makes "richer contact information" precise: the hidden object a
+THEORY.md §8 makes "richer contact information" precise: the hidden object a
 contact graph infers is a *structure* (which set of edges is simultaneously active),
-as a calibrated Bayesian posterior, and section 10 spells out the tractability fork --
+as a calibrated Bayesian posterior, and §10 spells out the tractability fork --
 exact ``2**E`` enumeration is preferred for the small graphs the package ships with, but
 large ``E`` needs a sampling method that never materializes the ``2**E`` alphabet.
 
@@ -35,7 +35,7 @@ import numpy as np
 
 from contact.config import DetectorConfig, InferenceParams
 from contact.hmm import forward_backward
-from contact.model import ContactDetector
+from contact.detector import ContactDetector
 from contact.structure_inference import (
     exact_active_sets,
     particle_filter_active_sets,
@@ -67,7 +67,7 @@ def _random_log_evidence(
     Each edge has a true active/inactive trajectory; the active column is biased toward
     the truth by ``scale`` so the data is informative (not a flat tie), plus noise. Only
     the active-vs-inactive *difference* matters to the estimators, so the absolute level
-    is irrelevant -- this is the abstract structure-posterior contract of s.8.
+    is irrelevant -- this is the abstract structure-posterior contract of §8.
     """
     rng = np.random.default_rng(seed)
     # A persistent random active/inactive sequence per edge (block-structured so the
@@ -107,7 +107,7 @@ def _synthetic_obs(T: int, *, meas_cov: np.ndarray | None = None) -> ContactObse
 
 
 # ======================================================================================
-# STRUCTURE: scaling the active-set posterior beyond enumeration (THEORY.md s.8/s.10)
+# STRUCTURE: scaling the active-set posterior beyond enumeration (THEORY.md §8/§10)
 # ======================================================================================
 
 
@@ -118,7 +118,7 @@ class TestStructureScaling:
         On a fixed-seed random E=3 problem, the Rao-Blackwellized particle smoother and
         the exact enumeration estimate the *same* smoothing marginal, so at
         n_particles >= 512 the mean absolute difference is < 0.05 (the documented bound;
-        s.8 -- the PF is not approximating a different prior, only Monte-Carlo sampling
+        §8 -- the PF is not approximating a different prior, only Monte-Carlo sampling
         the same one).
         """
         log_ev = _random_log_evidence(T=30, E=3, seed=7)
@@ -161,8 +161,8 @@ class TestStructureScaling:
         The particle smoother never materializes the 2**E subset alphabet -- it only
         ever touches the handful of data-supported sets its cloud visits -- so it
         produces a valid (T, 8) posterior at E=8 where exact enumeration would have to
-        carry 256 subset states (and grows exponentially past that). This is the s.8
-        "particle filter over the discrete structure" / s.10 large-E rung: the PF
+        carry 256 subset states (and grows exponentially past that). This is the §8
+        "particle filter over the discrete structure" / §10 large-E rung: the PF
         *scales*.
         """
         E = 8
@@ -194,7 +194,7 @@ class TestStructureScaling:
 
 
 # ======================================================================================
-# UNCERTAINTY: per-frame measurement-uncertainty propagation (THEORY.md s.8)
+# UNCERTAINTY: per-frame measurement-uncertainty propagation (THEORY.md §8)
 # ======================================================================================
 
 

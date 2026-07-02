@@ -1,14 +1,14 @@
-"""Contact-implicit inverse dynamics — the THEORY.md s.8 "north star".
+"""Contact-implicit inverse dynamics — the THEORY.md §8 "north star".
 
-This is the final rung of the ladder (THEORY.md s.10, beyond rung 5), the object the
-whole document points at in s.8:
+This is the final rung of the ladder (THEORY.md §10, beyond rung 5), the object the
+whole document points at in §8:
 
   > a full contact-implicit inverse dynamics ... jointly infer contact existence,
   > mode, and force as the physically-valid explanation of the observed motion under
   > Newton-Euler dynamics with complementarity and friction-cone constraints.
 
-Where the kinematic detector (the HMM/HSMM of s.1-s.6) asks *does the motion look like
-contact?*, and the compliance layer (``contact.dynamics``, s.7) asks *given a known
+Where the kinematic detector (the HMM/HSMM of §1-§6) asks *does the motion look like
+contact?*, and the compliance layer (``contact.dynamics``, §7) asks *given a known
 stiffness, what force does the penetration imply?*, this module asks the dual,
 dynamics-first question:
 
@@ -20,11 +20,11 @@ dynamics-first question:
   load ARE the active set; their forces ARE the loading. Contact is thus recovered
   *from the dynamics*, complementary to (and a cross-check on) the kinematic detector.
 
-Honest scope and the observability caveat (THEORY.md s.7)
+Honest scope and the observability caveat (THEORY.md §7)
 ---------------------------------------------------------
 The recovered force is set by the *dynamics*, not the kinematics, so unlike the pure
 HMM this layer can in principle recover force magnitude -- but only up to the
-indeterminacy s.7 names: with more than 6 force unknowns balancing a single 6-wrench
+indeterminacy §7 names: with more than 6 force unknowns balancing a single 6-wrench
 (e.g. a box on four corners), an entire null-space family of force splits produces the
 *identical* net wrench. We do NOT pretend that family away. We pick the **minimum-norm**
 member via a small Tikhonov term ``force_regularization*||f||^2`` -- the most honest
@@ -36,16 +36,16 @@ candidates is the regularizer's choice, not a measurement.
 
 Approximations, stated plainly
 ------------------------------
-* Accelerations come from double-differentiating noisy, smoothed mocac poses. s.4/s.6
+* Accelerations come from double-differentiating noisy, smoothed mocac poses. §4/§6
   warn this amplifies noise and that wide smoothing destroys impact timing; we keep the
   smoothing local (``contact.signals``) and small, and we expose ``accel_smooth_time``.
 * We treat the body as a single rigid body with a known constant body-frame inertia.
-  Articulated/multi-body inverse dynamics is out of scope (s.8's contact GRAPH is the
+  Articulated/multi-body inverse dynamics is out of scope (§8's contact GRAPH is the
   ``contact.graph`` layer's job).
 * The friction cone is the true (second-order) Coulomb cone ||f_t|| <= mu*f_n, solved
   as a small per-frame second-order-cone-constrained least squares via
-  ``scipy.optimize.minimize`` (SLSQP). This is the elliptic cone of s.7, not MuJoCo's
-  pyramidal approximation -- we keep the *physical* law, per the s.9 transfer caveat.
+  ``scipy.optimize.minimize`` (SLSQP). This is the elliptic cone of §7, not MuJoCo's
+  pyramidal approximation -- we keep the *physical* law, per the §9 transfer caveat.
 
 This module imports only :mod:`contact.types`, :mod:`contact.config`,
 :mod:`contact.signals`, numpy and scipy (the spec's allowed set). It is a NEW, separate
@@ -56,7 +56,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import cvxpy as cp
 import numpy as np
 
 from .config import DetectorConfig, InverseDynamicsParams
@@ -145,9 +144,9 @@ def body_accelerations(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Linear CoM acceleration, angular acceleration, and angular velocity from a pose.
 
-    THEORY.md s.8 needs the body's acceleration state to evaluate Newton-Euler. We get
-    it by differentiating the (noisy) observed pose, which s.4 warns amplifies noise and
-    s.6 warns can smear impact timing if over-smoothed. So we differentiate through the
+    THEORY.md §8 needs the body's acceleration state to evaluate Newton-Euler. We get
+    it by differentiating the (noisy) observed pose, which §4 warns amplifies noise and
+    §6 warns can smear impact timing if over-smoothed. So we differentiate through the
     *local*, time-aware helpers of :mod:`contact.signals`: smooth in real seconds, then
     take a local-polynomial derivative, twice for the linear channel.
 
@@ -159,7 +158,7 @@ def body_accelerations(
       ``accel_smooth_time``) and apply :func:`contact.signals.derivative` *twice* (each
       call itself a local-polynomial fit) to get ``a_com = d^2 p_com / dt^2``.
     * **Angular velocity** ``omega(t)``: for a body whose orientation is ``q(t)``, the
-      world angular velocity is the vector part of ``2 * (dq/dt) * conj(q)`` (the s.3
+      world angular velocity is the vector part of ``2 * (dq/dt) * conj(q)`` (the §3
       construction, mirrored from ``contact.geometry``). We sign-align the quaternion
       stream against its double cover, smooth it, finite-difference it, and renormalize.
     * **Angular acceleration** ``alpha(t) = d omega / dt``: a further local derivative of
@@ -174,7 +173,7 @@ def body_accelerations(
         Magnitude of gravity (m/s^2); unused here but accepted so the signature reads as
         a body-state extractor (it is consumed in :func:`required_wrench`).
     accel_smooth_time : float
-        Real-time smoothing window (s) applied before each differentiation (s.4/s.6).
+        Real-time smoothing window (s) applied before each differentiation (§4/§6).
     com_local : (3,) array, optional
         CoM offset in the body frame; default origin (zeros).
 
@@ -201,17 +200,17 @@ def body_accelerations(
     # Linear acceleration: differentiate twice. Each :func:`contact.signals.derivative`
     # call is itself a *local* least-squares (Savitzky-Golay) fit over an
     # ``accel_smooth_time``-second window, which both robustly rejects differentiation
-    # noise (s.4) and stays local enough not to smear impact timing (s.6). We deliberately
+    # noise (§4) and stays local enough not to smear impact timing (§6). We deliberately
     # do NOT pre-Gaussian-smooth: a row-normalized Gaussian average is one-sided near the
     # record ends and so injects a boundary bias into a *curved* signal that the second
     # derivative then amplifies (it turns a clean parabola's exact -g into a biased value).
     # The local-polynomial fit has no such bias -- on a parabola it recovers the constant
     # acceleration exactly, and on noisy data it tracks the true accel with the window
-    # trading variance for impact fidelity (the single s.6 knob).
+    # trading variance for impact fidelity (the single §6 knob).
     v_com = derivative(p_com, t, smooth_time=accel_smooth_time)
     a_com = derivative(v_com, t, smooth_time=accel_smooth_time)
 
-    # Angular velocity omega = vec(2 * dq/dt * conj(q)) in the world frame (s.3). Here a
+    # Angular velocity omega = vec(2 * dq/dt * conj(q)) in the world frame (§3). Here a
     # single derivative is taken, so a light pre-smooth of the (already sign-aligned)
     # quaternion stream is safe and mirrors the geometry module's omega path; we then
     # renormalize before forming dq/dt.
@@ -243,7 +242,7 @@ def required_wrench(
 ) -> np.ndarray:
     """Net external wrench [F(3); tau(3)] (world, about the CoM) the contacts must supply.
 
-    THEORY.md s.8 (Newton-Euler). For a rigid body of mass ``m`` and body-frame inertia
+    THEORY.md §8 (Newton-Euler). For a rigid body of mass ``m`` and body-frame inertia
     ``I_body`` whose CoM has world acceleration ``a_com`` and whose world angular
     velocity/acceleration are ``omega``/``alpha``, the NET external wrench equals::
 
@@ -321,7 +320,7 @@ def contact_wrench_map(
 ) -> np.ndarray:
     """Per-frame map ``G(t)`` from per-candidate force components to the net CoM wrench.
 
-    THEORY.md s.8: each candidate contact ``i`` applies a force at a world point ``r_i``.
+    THEORY.md §8: each candidate contact ``i`` applies a force at a world point ``r_i``.
     We parameterize that force in the candidate's own contact basis -- one **normal**
     component (along the candidate's outward normal ``n_i``) and two **tangential**
     components (in the tangent plane). The contribution of candidate ``i`` to the net
@@ -342,7 +341,7 @@ def contact_wrench_map(
     corners and outward normals rotate correctly. ``com_local`` sets the moment center.
 
     Why parameterize in the candidate's basis (not raw xyz)? The Signorini /
-    friction-cone constraints of s.2/s.7 are stated per candidate as "normal >= 0" and
+    friction-cone constraints of §2/§7 are stated per candidate as "normal >= 0" and
     "||tangential|| <= mu*normal". Carrying the basis into ``G`` lets the solver impose
     those as simple bounds/cone constraints on ``f_stack`` directly.
 
@@ -463,28 +462,30 @@ def _solve_frame(
     Minimize ``||G f - w||^2 + reg*||f||^2`` over ``f`` in R^{3K}, subject to, for each
     candidate i that is in ``active_mask``:
 
-        f_n,i >= 0                          (Signorini: contact can only push, s.2)
-        ||(f_t1,i, f_t2,i)|| <= mu * f_n,i  (Coulomb friction cone, s.7)
+        f_n,i >= 0                          (Signorini: contact can only push, §2)
+        ||(f_t1,i, f_t2,i)|| <= mu * f_n,i  (Coulomb friction cone, §7)
 
     and ``f_*,i = 0`` for every candidate NOT in ``active_mask`` (the complementarity
-    mask: a candidate whose gap is open carries no force, ``g*lambda = 0``, s.2). We
+    mask: a candidate whose gap is open carries no force, ``g*lambda = 0``, §2). We
     enforce the mask by simply dropping those candidates' columns from the optimization
     and leaving their forces at 0.
 
     Solver. The objective is a convex quadratic and the friction cone is a convex
     second-order cone, so this is a small **second-order-cone program**, solved with
     cvxpy + Clarabel. Clarabel returns the global optimum directly (the true elliptic
-    Coulomb cone of s.7, not a pyramidal linearization), so none of the warm-start /
+    Coulomb cone of §7, not a pyramidal linearization), so none of the warm-start /
     iterate-tie-break / feasibility-projection scaffolding a general NLP solver needs is
     required here.
 
-    Indeterminacy (s.7). When the active candidates over-determine the wrench (>6 force
+    Indeterminacy (§7). When the active candidates over-determine the wrench (>6 force
     components for one 6-wrench, e.g. a box on four corners = 12 components) the data fit
     has a null space: many ``f`` give the same ``G f``. The Tikhonov term ``reg*||f||^2``
     makes the objective strictly convex, so the solver returns the unique **minimum-norm**
     member -- the honest default; the split among redundant co-located candidates is the
-    regularizer's choice, NOT a measurement (the unobservable load split of s.7).
+    regularizer's choice, NOT a measurement (the unobservable load split of §7).
     """
+    import cvxpy as cp  # local import: the solver stack loads only when a solve actually runs
+
     K = G.shape[1] // 3
     active_idx = np.flatnonzero(active_mask)
     f_full = np.zeros(3 * K)
@@ -501,9 +502,9 @@ def _solve_frame(
     constraints = []
     for j in range(na):
         nj = 3 * j
-        constraints.append(f[nj] >= 0.0)                             # Signorini: f_n >= 0 (s.2)
+        constraints.append(f[nj] >= 0.0)                             # Signorini: f_n >= 0 (§2)
         if mu > 0.0:
-            constraints.append(cp.SOC(mu * f[nj], f[nj + 1 : nj + 3]))   # Coulomb cone (s.7)
+            constraints.append(cp.SOC(mu * f[nj], f[nj + 1 : nj + 3]))   # Coulomb cone (§7)
         else:
             constraints.append(f[nj + 1 : nj + 3] == 0.0)            # no friction => no tangential
     objective = cp.Minimize(cp.sum_squares(Ga @ f - w) + reg * cp.sum_squares(f))
@@ -526,20 +527,20 @@ def solve_contact_implicit(
     t: np.ndarray | None = None,
     candidate_points: np.ndarray | None = None,
 ) -> InverseDynamicsResult:
-    """Per-frame contact-implicit inverse dynamics solve (THEORY.md s.8 north star).
+    """Per-frame contact-implicit inverse dynamics solve (THEORY.md §8 north star).
 
     For each frame ``t`` we find the per-candidate contact forces that best explain the
     required net wrench under Signorini + Coulomb, then read off the active set. See
     :func:`_solve_frame` for the per-frame convex program; this wraps it over time, packs
     the result into :class:`InverseDynamicsResult`, and applies the complementarity mask.
 
-    Complementarity mask (THEORY.md s.2). A candidate ``i`` may carry force on frame
+    Complementarity mask (THEORY.md §2). A candidate ``i`` may carry force on frame
     ``t`` only when its gap is closed: ``|gap_i(t)| < params.complementarity_gap``.
     Candidates with a larger gap are forced to zero force (``g*lambda = 0``). This is the
     Signorini branch selection -- contact existence enters as a hard mask on which forces
     the dynamics is even allowed to use.
 
-    Active set (THEORY.md s.8). After the solve, a candidate is *active* on a frame iff
+    Active set (THEORY.md §8). After the solve, a candidate is *active* on a frame iff
     its recovered normal force exceeds ``params.active_force_threshold``. That set is the
     dynamics-side estimate of contact existence + which candidate carries load -- the
     complement to the kinematic detector.
@@ -600,7 +601,7 @@ def solve_contact_implicit(
     for ti in range(T):
         Gt = G(ti) if callable_G else Garr[ti]                        # (6, 3K)
         w = W[ti]
-        # Complementarity: only gaps within +/- comp_gap may carry force (Signorini, s.2).
+        # Complementarity: only gaps within +/- comp_gap may carry force (Signorini, §2).
         active_mask = np.abs(gaps[ti]) < comp_gap                     # (K,)
         f = _solve_frame(Gt, w, active_mask, mu, reg)                 # (3K,)
 
@@ -639,7 +640,7 @@ def contact_implicit_from_raw(
 
     Pulls the inertial parameters and contact candidates from the scenario metadata,
     builds the wrench map from the (noisy) observed moving-body pose, computes the
-    required Newton-Euler wrench, and solves the per-frame constrained problem (s.8).
+    required Newton-Euler wrench, and solves the per-frame constrained problem (§8).
 
     Expected metadata schema (``raw.meta``)
     ----------------------------------------
@@ -701,7 +702,7 @@ def contact_implicit_from_raw(
             )
         gaps_tk = gap_kt.T                                            # (T, K)
     elif "contact_points" in meta and "corners_local" in meta["contact_points"]:
-        # Fallback for the existing indeterminate-rig scenario (s.7 arrays).
+        # Fallback for the existing indeterminate-rig scenario (§7 arrays).
         cp = meta["contact_points"]
         pts_l = np.asarray(cp["corners_local"], dtype=float).reshape(-1, 3)
         K = pts_l.shape[0]
@@ -763,7 +764,7 @@ def infer_normal_force(
     .. note:: Single rigid body only. An ARTICULATED body (e.g. the hinge-suspended
        Newton's-cradle balls) has unmodeled joint-reaction wrenches that this solver would
        mis-attribute to the contact, so it is intentionally out of scope here (DESIGN.md
-       PART II.B / s.11 open items): the cradle's clacks need a measured sensor or an
+       PART II.B / §11 open items): the cradle's clacks need a measured sensor or an
        articulated-dynamics extension.
     """
     meta = raw.meta or {}

@@ -1,10 +1,10 @@
 """Generic log-space Hidden Markov Model inference (numpy only).
 
 This module is the *discrete shadow* of the hybrid dynamical system of
-THEORY.md section 5: the hybrid system's continuous flows-within-a-mode and
+THEORY.md §5: the hybrid system's continuous flows-within-a-mode and
 discrete jumps-between-modes are discretized per frame into an HMM whose hidden
 states are modes, whose transition prior encodes "the tendency to persist," and
-whose emissions are the per-state likelihoods of section 4. Running the standard
+whose emissions are the per-state likelihoods of §4. Running the standard
 inference here (forward-backward and Viterbi) is what "replaces all three cleanup
 heuristics at once" — persistence is now a probabilistic prior rather than a
 hand-tuned post-process.
@@ -13,7 +13,7 @@ Deliberately *contact-free*: there is no notion of gap, twist, or mode in here.
 It is a clean, reusable HMM over abstract states `0..S-1` so that the contact
 layer can sit entirely on top of it. The only inputs are log-space quantities;
 everything is computed in log-space because likelihoods over a whole trajectory
-underflow catastrophically if multiplied raw (THEORY.md sections 4 & 5 work in
+underflow catastrophically if multiplied raw (THEORY.md §4 & §5 work in
 log-likelihood-ratio space for exactly this reason).
 
 Conventions
@@ -25,7 +25,7 @@ Conventions
       time-homogeneous, shape `(S, S)`, used at every step; or
       time-varying, shape `(T, S, S)`, where `log_trans[t]` is the transition
       from step `t` to step `t+1` (steps `0 .. T-2` are consumed; `log_trans[T-1]`
-      is ignored). Time-varying transitions are what THEORY.md section 5 calls a
+      is ignored). Time-varying transitions are what THEORY.md §5 calls a
       *state-dependent guard* — e.g. free->contact rising as the gap nears zero.
 * Each row of a transition matrix is a distribution over the *next* state, so
       `logsumexp(log_trans[..., s, :]) == 0` for a proper (normalized) matrix.
@@ -93,9 +93,9 @@ def forward_backward(
 
     Implements the two classic recursions, both in log-space using ``logsumexp``
     so trajectory-length products never underflow. This is the *smoothing*
-    inference of THEORY.md section 5: it conditions each frame on the entire
+    inference of THEORY.md §5: it conditions each frame on the entire
     record (past and future), which is exactly why a real-time causal detector is
-    necessarily less certain than this offline one (section 6, the
+    necessarily less certain than this offline one (§6, the
     latency-accuracy tradeoff).
 
     Forward (alpha):  alpha[t, s] = log p(o_0..o_t, state_t = s)
@@ -154,7 +154,7 @@ def viterbi(
     """Maximum-a-posteriori state path via the Viterbi algorithm (log-space).
 
     Where forward-backward gives the *per-frame* posterior, Viterbi gives the
-    single most likely *contiguous* state sequence — THEORY.md section 5's "clean
+    single most likely *contiguous* state sequence — THEORY.md §5's "clean
     boolean segmentation." Replacing every product with a sum in log-space and
     every marginal sum with a max turns the forward recursion into a max-product
     (shortest-path) recursion:
@@ -194,7 +194,7 @@ def viterbi(
 # ======================================================================================
 # Object interface: a temporal model bundles its prior so emissions are the only per-call
 # input. The contact layer plugs its per-mode emissions into one of these; the engine
-# itself stays contact-free (THEORY.md section 5).
+# itself stays contact-free (THEORY.md §5).
 # ======================================================================================
 
 
@@ -217,7 +217,7 @@ class TemporalSmoother(Protocol):
 
 
 class HMM:
-    """Hidden Markov Model over modes -- the discrete shadow of the hybrid system (s.5).
+    """Hidden Markov Model over modes -- the discrete shadow of the hybrid system (§5).
 
     Bundles the temporal prior (initial distribution + transitions, either a homogeneous
     ``(S, S)`` matrix or a gap-gated time-varying ``(T, S, S)`` stack) so emissions are the

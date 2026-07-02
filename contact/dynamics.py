@@ -1,11 +1,11 @@
 """Dynamics / material layer: force from compliance, and the friction cone.
 
-This is rung 4 of the pragmatic ladder (THEORY.md s.10): *dynamics and material*.
-It implements the two consequences of the observability theorem of THEORY.md s.7:
+This is rung 4 of the pragmatic ladder (THEORY.md §10): *dynamics and material*.
+It implements the two consequences of the observability theorem of THEORY.md §7:
 
   1. **Penetration is a calibrated force gauge.** Under rigid contact the normal
      force magnitude is a Lagrange multiplier set by the dynamics, *unobservable*
-     from kinematics alone (s.7). The instant we grant the contact a known
+     from kinematics alone (§7). The instant we grant the contact a known
      compliance ``k`` (stiffness), the force is pinned to that contact's *own*
      measurable deformation ``delta`` by the linear spring law ``lambda = k*delta``.
      So a number the toy script treated as "penetration error to forgive" becomes a
@@ -14,12 +14,12 @@ It implements the two consequences of the observability theorem of THEORY.md s.7
   2. **The friction law is set-valued, and that closes the dynamical loop.** While a
      contact *sticks*, the tangential force may be anything inside the Coulomb cone
      ``||lambda_t|| <= mu*lambda_n``; gross *sliding* begins exactly when the
-     tangential demand reaches the cone boundary (the stick->slip guard of s.5). With
+     tangential demand reaches the cone boundary (the stick->slip guard of §5). With
      the normal force from compliance we can therefore *predict* stick vs. slip from
      dynamics and cross-check that prediction against the observed kinematics --
-     "apparent sliding with no tangential force => something is wrong" (s.7).
+     "apparent sliding with no tangential force => something is wrong" (§7).
 
-The headline of s.7 is the **observability theorem** itself, which
+The headline of §7 is the **observability theorem** itself, which
 :func:`observability_demo` exhibits on a statically-indeterminate rig:
 
   > Under rigid contact, force magnitude is unobservable from kinematics alone, and
@@ -45,7 +45,7 @@ from .config import MaterialParams
 from .types import ContactObservations
 
 # --------------------------------------------------------------------------------------
-# 1. Normal force from penetration -- compliance as a calibrated force gauge (s.7)
+# 1. Normal force from penetration -- compliance as a calibrated force gauge (§7)
 # --------------------------------------------------------------------------------------
 
 
@@ -55,22 +55,22 @@ def normal_force_from_penetration(
     in_contact: np.ndarray,
     material: MaterialParams,
 ) -> np.ndarray:
-    """Per-frame normal contact force from penetration under a linear spring (s.7).
+    """Per-frame normal contact force from penetration under a linear spring (§7).
 
-    THEORY.md s.7: when the material stiffness ``k`` is known the penetration depth
+    THEORY.md §7: when the material stiffness ``k`` is known the penetration depth
     becomes a *calibrated force gauge*, ``lambda = k * delta``. This turns the gap's
     ``g < 0`` side -- which earlier rungs treated as "squish error to forgive" -- into
     a loading measurement, and is the regularizer that makes the contact force
     observable at all.
 
     The penetration is measured *relative to the calibrated resting gap* (the EM bias
-    of s.7/s.8), because a constant sensor bias and a true constant offset are
-    indistinguishable from a static pose (the calibration caveat in s.7). Concretely::
+    of §7/§8), because a constant sensor bias and a true constant offset are
+    indistinguishable from a static pose (the calibration caveat in §7). Concretely::
 
         delta_i = max(0, -(g_i - gap_bias))     # depth of interpenetration (m, >= 0)
         lambda_i = max(0, k * delta_i)           # linear spring force (N), only on contact frames
 
-    The Signorini complementarity of s.2 (``g*lambda = 0``, force only when touching)
+    The Signorini complementarity of §2 (``g*lambda = 0``, force only when touching)
     is honoured two ways: ``delta`` is clamped at 0 so a real gap contributes no force,
     and the force is additionally zeroed on frames the detector did not flag as contact
     (``in_contact`` False), since off-contact a fitted ``g < gap_bias`` is noise, not load.
@@ -98,13 +98,13 @@ def normal_force_from_penetration(
     in_contact = np.asarray(in_contact, dtype=bool)
 
     if material.stiffness is None:
-        # No compliance => no force gauge => magnitude is unobservable (s.7).
+        # No compliance => no force gauge => magnitude is unobservable (§7).
         return np.full(gap.shape, np.nan, dtype=float)
 
     k = float(material.stiffness)
 
     # Penetration depth measured below the calibrated resting datum, clamped at 0 so a
-    # genuine separation (g > gap_bias) contributes no force (Signorini, s.2).
+    # genuine separation (g > gap_bias) contributes no force (Signorini, §2).
     penetration = np.maximum(0.0, -(gap - gap_bias))
 
     # Linear spring law lambda = k*delta; max(0, .) guards a negative stiffness input.
@@ -116,7 +116,7 @@ def normal_force_from_penetration(
 
 
 # --------------------------------------------------------------------------------------
-# 2. Friction cone: stick vs. slip (s.7)
+# 2. Friction cone: stick vs. slip (§7)
 # --------------------------------------------------------------------------------------
 
 
@@ -125,17 +125,17 @@ def friction_stick_slip(
     normal_force: np.ndarray,
     material: MaterialParams,
 ) -> list[str]:
-    """Per-frame stick/slip label from kinematics and the Coulomb cone (s.7).
+    """Per-frame stick/slip label from kinematics and the Coulomb cone (§7).
 
-    THEORY.md s.7: friction is a *set-valued* law. While sticking the tangential force
+    THEORY.md §7: friction is a *set-valued* law. While sticking the tangential force
     may be anything inside the cone ``||lambda_t|| <= mu*lambda_n``; gross sliding
     begins exactly when the tangential demand reaches the cone boundary -- the
-    stick->slip guard of s.5. There are therefore two independent witnesses to a slip,
+    stick->slip guard of §5. There are therefore two independent witnesses to a slip,
     and the principled label cross-checks them:
 
       * **Kinematic evidence** (always available): a contact is *sliding* when the
         tangential speed ``||v_t||`` exceeds ``material.slip_speed_threshold``. This is
-        the direct, motion-side signature of the sliding mode of s.3.
+        the direct, motion-side signature of the sliding mode of §3.
 
       * **Dynamic / friction-cone guard** (available only when ``normal_force`` is
         known, i.e. compliance gave us the force gauge above): the contact *should*
@@ -149,7 +149,7 @@ def friction_stick_slip(
          -- the kinematic decision, which is the channel we can always measure.
       2. When the normal force is known we additionally evaluate the cone. A frame is
          *at the boundary* once ``mu*lambda_n`` is small enough that even a modest
-         tangential demand would saturate it. The honest cross-check of s.7 fires on
+         tangential demand would saturate it. The honest cross-check of §7 fires on
          the contradiction the theory calls out explicitly: **apparent sliding with a
          healthy normal force but (by the cone) no admissible tangential drive, or a
          frame the cone says must slip yet the kinematics show it stuck.** We never let
@@ -204,7 +204,7 @@ def friction_stick_slip(
     labels: list[str] = []
     for i in range(T):
         if not loaded[i]:
-            labels.append("")  # not in contact / unloaded => no friction state (s.2)
+            labels.append("")  # not in contact / unloaded => no friction state (§2)
             continue
 
         # (1) Kinematic decision -- the always-observable channel.
@@ -229,20 +229,20 @@ def friction_stick_slip(
             # Motion says slip. The cone agrees iff it is at/over its boundary, which we
             # cannot confirm without lambda_t; we defer to the motion (the hard evidence)
             # and label slip. (A separate diagnostic -- "slip with a fat unsaturated
-            # cone" -- is the s.7 inconsistency, surfaced by the caller comparing against
+            # cone" -- is the §7 inconsistency, surfaced by the caller comparing against
             # the predicted force; we do not silently flip the observed motion.)
             labels.append("slip")
         else:
             # Motion says stick. Honour it only if the cone can actually host a stick;
             # if the cone capacity has collapsed the contact must in fact be slipping
-            # (cone guard overriding a borderline-still kinematic reading, s.5/s.7).
+            # (cone guard overriding a borderline-still kinematic reading, §5/§7).
             labels.append("stick" if cone_can_stick else "slip")
 
     return labels
 
 
 # --------------------------------------------------------------------------------------
-# 3. The observability theorem, made concrete (s.7)
+# 3. The observability theorem, made concrete (§7)
 # --------------------------------------------------------------------------------------
 
 
@@ -265,7 +265,7 @@ def _equilibrium_map(contact_xy: np.ndarray) -> np.ndarray:
     For ``K > 3`` distinct contacts ``A`` has rank ``<= 3 < K``, so its null space
     ``{ d : A @ d = 0 }`` has dimension ``>= K - 3 > 0``: a whole family of force
     splits ``f + d`` produces the *identical* net wrench, hence the *identical* rigid
-    motion. That is the statically-indeterminate unobservability of s.7, in one matrix.
+    motion. That is the statically-indeterminate unobservability of §7, in one matrix.
     """
     contact_xy = np.asarray(contact_xy, dtype=float)
     x = contact_xy[:, 0]
@@ -282,7 +282,7 @@ def observability_demo(
     contact_xy: np.ndarray | None = None,
     tol: float = 1e-6,
 ) -> dict:
-    """Exhibit the observability theorem of THEORY.md s.7 on an indeterminate rig.
+    """Exhibit the observability theorem of THEORY.md §7 on an indeterminate rig.
 
     Two halves, matching the two clauses of the theorem:
 
@@ -301,7 +301,7 @@ def observability_demo(
         so the per-contact forces are individually identifiable from the per-contact
         penetrations. We apply it and check the recovered forces match the measured
         ground-truth contact forces within tolerance, confirming that material
-        knowledge is the regularizer that makes loading recoverable (s.7).
+        knowledge is the regularizer that makes loading recoverable (§7).
 
     Parameters
     ----------

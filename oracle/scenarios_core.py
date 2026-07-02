@@ -42,10 +42,10 @@ _BOX_HALF = 0.10        # box half-extent (m); bottom-center material point is [
 _BALL_R = 0.05          # sphere radius (m)
 
 # The four BOTTOM-FACE corners of a (_BOX_HALF)-cube, in the box body-local frame. These
-# are the K candidate point-contacts that contact-implicit inverse dynamics (THEORY.md s.8,
+# are the K candidate point-contacts that contact-implicit inverse dynamics (THEORY.md §8,
 # the north star) reasons over: each is a place the box can push against a plane, and the
-# Signorini complementarity (s.2) decides which actually carry force. The same four corners
-# are also the s.7 statically-indeterminate load-split unknowns (see `_RIG_CORNERS_LOCAL`).
+# Signorini complementarity (§2) decides which actually carry force. The same four corners
+# are also the §7 statically-indeterminate load-split unknowns (see `_RIG_CORNERS_LOCAL`).
 _BOX_BOTTOM_CORNERS_LOCAL = np.array(
     [
         [-_BOX_HALF, -_BOX_HALF, -_BOX_HALF],
@@ -56,12 +56,12 @@ _BOX_BOTTOM_CORNERS_LOCAL = np.array(
     dtype=float,
 )
 
-# Indeterminate-rig compliance (THEORY.md s.7). We deliberately make the contact a
+# Indeterminate-rig compliance (THEORY.md §7). We deliberately make the contact a
 # CONSTANT-impedance linear spring: MuJoCo's `solref="-k -b"` selects a direct
 # stiffness/damping, and a CONSTANT `solimp` (dmin == dmax) keeps the constraint
 # impedance from drifting with penetration depth, so f = k_eff * penetration holds
 # *exactly* and *identically* at every corner. That linearity is the whole point: it
-# is the compliance that collapses the indeterminate null space (s.7), turning each
+# is the compliance that collapses the indeterminate null space (§7), turning each
 # corner's measurable squish into an individually-identifiable force gauge. The nominal
 # `-k` here is not the effective stiffness (MuJoCo's impedance rescales it); we MEASURE
 # the realized k_eff = f/penetration from the settled sim and report THAT as the truth.
@@ -74,8 +74,8 @@ def _build_drop_rest() -> tuple[mujoco.MjModel, dict]:
     """Box free-falls onto a static plane and rests.
 
     Physics: gravity pulls the box down; at touchdown the normal velocity is arrested
-    almost discontinuously (an impact, THEORY.md s.6), then the contact settles into
-    sustained STATIC contact (zero relative twist, THEORY.md s.3). Exercises existence
+    almost discontinuously (an impact, THEORY.md §6), then the contact settles into
+    sustained STATIC contact (zero relative twist, THEORY.md §3). Exercises existence
     plus a single touchdown impact.
     """
     xml = f"""
@@ -104,7 +104,7 @@ def _build_drop_rest() -> tuple[mujoco.MjModel, dict]:
         contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
         shape="box",
         duration=1.5,
-        # Candidate contact corners for contact-implicit inverse dynamics (THEORY.md s.8).
+        # Candidate contact corners for contact-implicit inverse dynamics (THEORY.md §8).
         box_corners_local=_BOX_BOTTOM_CORNERS_LOCAL,
     )
 
@@ -115,7 +115,7 @@ def _build_drop_rest_liftoff() -> tuple[mujoco.MjModel, dict]:
 
     Physics: as drop_rest until rest, then we apply a vertical world force larger than
     weight to the box, peeling it off the plane. This produces both guards of THEORY.md
-    s.5: free->contact (gap reaches 0) and contact->free (the normal force lambda
+    §5: free->contact (gap reaches 0) and contact->free (the normal force lambda
     reaches 0). Exercises touchdown and liftoff.
     """
     xml = f"""
@@ -163,7 +163,7 @@ def _build_drop_rest_liftoff() -> tuple[mujoco.MjModel, dict]:
 def _build_push_to_slide() -> tuple[mujoco.MjModel, dict]:
     """Box resting on a plane; a ramped horizontal force eventually breaks friction.
 
-    Physics (THEORY.md s.7, the stick->slip guard): while sticking, the tangential
+    Physics (THEORY.md §7, the stick->slip guard): while sticking, the tangential
     force lives inside the friction cone ||f_t|| <= mu*f_n; sliding begins exactly when
     the applied force reaches the cone boundary. We ramp a +x world force from 0; below
     mu*weight the box is STATIC, above it the box SLIDES. Exercises static -> sliding.
@@ -191,7 +191,7 @@ def _build_push_to_slide() -> tuple[mujoco.MjModel, dict]:
         # eventually flings the box off the plane (the contact would then flicker), but
         # a force only slightly above the cone boundary makes the box slide steadily
         # while staying seated -> a clean STATIC segment followed by a sustained SLIDING
-        # segment (the stick->slip guard of THEORY.md s.7).
+        # segment (the stick->slip guard of THEORY.md §7).
         d.xfrc_applied[box_id, :] = 0.0
         if d.time > 0.3:
             ramp = 1.5 * weight * (d.time - 0.3)
@@ -219,7 +219,7 @@ def _build_push_to_slide() -> tuple[mujoco.MjModel, dict]:
 def _build_rolling_ball() -> tuple[mujoco.MjModel, dict]:
     """Sphere given v and omega satisfying rolling-without-slip on a plane.
 
-    Physics (THEORY.md s.3, the rolling mode): rolling is the *curved* twist subspace
+    Physics (THEORY.md §3, the rolling mode): rolling is the *curved* twist subspace
     where tangential linear and tangential angular velocity are locked by v = omega x r.
     We initialize the ball so the material contact point has ~zero slip while the COM
     translates. Exercises ROLLING. (High friction + tiny rolling friction keeps it
@@ -265,7 +265,7 @@ def _build_rolling_ball() -> tuple[mujoco.MjModel, dict]:
         # handled by the surface. We raise the (observation-side) plane by one radius so
         # the tracked CENTER's signed distance to it reads ~0 at contact, just like a
         # box's tracked bottom-face point. This is the surface absorbing the radius
-        # exactly as documented for the sphere (THEORY.md s.3 note on tracking a single
+        # exactly as documented for the sphere (THEORY.md §3 note on tracking a single
         # material point). It changes only the OBSERVABLE gap; the MuJoCo truth labels
         # come from the geom-level contact and are unaffected.
         surface_point_local=np.array([0.0, 0.0, _BALL_R]),
@@ -281,7 +281,7 @@ def _build_rolling_ball() -> tuple[mujoco.MjModel, dict]:
 def _build_bouncing_ball() -> tuple[mujoco.MjModel, dict]:
     """Sphere with restitution dropped to bounce several times.
 
-    Physics (THEORY.md s.6): each touchdown is a reset map v+ = -e*v- with e the
+    Physics (THEORY.md §6): each touchdown is a reset map v+ = -e*v- with e the
     coefficient of restitution. We get repeated impacts (force atoms) separated by
     flight (FREE). Restitution is tuned via ``solref`` (negative second entry selects a
     direct stiffness/damping; low damping ratio => bouncy). Exercises repeated impacts.
@@ -322,11 +322,11 @@ def _build_bouncing_ball() -> tuple[mujoco.MjModel, dict]:
 def _build_moving_support() -> tuple[mujoco.MjModel, dict]:
     """Box rests on a CART that slides horizontally; the box rides along.
 
-    Physics (THEORY.md s.1, the central principle): contact is *relative*. The cart and
+    Physics (THEORY.md §1, the central principle): contact is *relative*. The cart and
     box both have large world velocity, yet the box-on-cart contact is unambiguously
     STATIC because their *relative* twist is ~0. The support is the cart body, NOT the
     world. A position actuator drives the cart along a rail (slide joint); friction
-    carries the box with it. This is the moving-on-moving edge case of THEORY.md s.9.
+    carries the box with it. This is the moving-on-moving edge case of THEORY.md §9.
     """
     cart_half = np.array([0.30, 0.30, 0.05])  # cart deck half-extents
     deck_top = cart_half[2]                    # top face z in cart-local frame
@@ -386,27 +386,27 @@ def _build_moving_support() -> tuple[mujoco.MjModel, dict]:
 
 
 # Local corner positions of the rig box's bottom face, in the box body frame. These are
-# the K candidate point contacts whose individual loads s.7 says are unobservable from
+# the K candidate point contacts whose individual loads §7 says are unobservable from
 # kinematics yet identifiable from per-corner penetration once compliance is known. They
 # are exactly the shared box bottom-face corners (the same K=4 candidates the inverse-
-# dynamics layer of s.8 reasons over), so we alias the one constant.
+# dynamics layer of §8 reasons over), so we alias the one constant.
 _RIG_CORNERS_LOCAL = _BOX_BOTTOM_CORNERS_LOCAL
 
 
 @scenario("indeterminate_rig")
 def _build_indeterminate_rig() -> tuple[mujoco.MjModel, dict]:
-    """A statically-indeterminate rig resting on a plane — the s.7 observability demo.
+    """A statically-indeterminate rig resting on a plane — the §7 observability demo.
 
-    Physics (THEORY.md s.7, the deepest result). A rigid box rests on a plane making
+    Physics (THEORY.md §7, the deepest result). A rigid box rests on a plane making
     K = 4 simultaneous corner contacts. The unknowns are the K vertical corner forces
     (f1..f4); static balance gives only THREE scalar equations -- one vertical force
     balance (sum fi = m g) and two moment balances (sum fi * x_i = 0, sum fi * y_i = 0).
     With K = 4 > 3 the system is *statically indeterminate*: an entire one-parameter
     family of corner-force distributions is consistent with the identical rigid-body
     equilibrium, so the load split is UNRECOVERABLE from kinematics alone -- exactly the
-    s.7 theorem.
+    §7 theorem.
 
-    The resolution, also from s.7: make the contacts slightly COMPLIANT. We tune
+    The resolution, also from §7: make the contacts slightly COMPLIANT. We tune
     `solref`/`solimp` so each corner is a linear spring f = k_eff * penetration with a
     constant, identical k_eff (see `_RIG_SOLREF`/`_RIG_SOLIMP`). The instant the bodies
     are compliant the indeterminate null space collapses -- each corner's force is pinned
@@ -459,6 +459,6 @@ def _build_indeterminate_rig() -> tuple[mujoco.MjModel, dict]:
         rig_corners_local=_RIG_CORNERS_LOCAL,
         # Also expose the unified inverse-dynamics candidate view (signed gap + per-corner
         # force + active flags) consistent with the new schema; these are the same K=4
-        # corners, so meta["candidates"] aliases meta["contact_points"] downstream (s.8).
+        # corners, so meta["candidates"] aliases meta["contact_points"] downstream (§8).
         box_corners_local=_RIG_CORNERS_LOCAL,
     )

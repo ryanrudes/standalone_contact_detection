@@ -1,23 +1,23 @@
-"""Unit tests for the multi-body contact-graph machinery (THEORY.md section 8).
+"""Unit tests for the multi-body contact-graph machinery (THEORY.md §8).
 
-These exercise rung 5 of the pragmatic ladder (THEORY.md s.10) — the active-set
+These exercise rung 5 of the pragmatic ladder (THEORY.md §10) — the active-set
 structure posterior over a contact graph — in isolation, on small *hand-built*
 synthetic scenes whose ground truth is known by construction:
 
-* :func:`contact.graph.build_candidate_edges` — the s.8 broad-phase: prune a
+* :func:`contact.graph.build_candidate_edges` — the §8 broad-phase: prune a
   body-pair that never comes within ``proximity_gap``, keep one that touches.
 * :func:`contact.graph.detect_scene` — the joint active-set inference: with two
   edges (A in contact throughout, B in contact only in the middle third) the
   per-edge active marginals and the MAP active set must recover that structure,
   the posterior columns must align with the ``edges`` list, and every per-frame
   subset distribution must be a valid (non-negative, normalized) distribution.
-* :func:`contact.consistency.energy_log_factor` — the s.8 global energy/dissipation
+* :func:`contact.consistency.energy_log_factor` — the §8 global energy/dissipation
   factor: a no-op (all-zeros) when it cannot be computed, otherwise a finite,
   NaN/inf-free, per-frame *relative* (mean-centred) preference.
 * Exactness of the joint inference for ``E == 2``: the ``2**E`` enumeration of
   active sets is *exact*, so with a deliberately weak temporal prior the MAP
   active set equals the brute-force per-frame argmax over the 4 subsets (THEORY.md
-  s.8: exact enumeration is correct/preferred for the small E here; large E would
+  §8: exact enumeration is correct/preferred for the small E here; large E would
   need RJMCMC/particle methods).
 
 The scenes are built so the *gap* — the only channel that decides existence at
@@ -104,8 +104,8 @@ def _two_edge_scene(T: int = 240) -> MultiBodyScene:
 
     The descent/ascent of body ``b`` are *smooth, quick ramps* placed just outside the
     central resting window, so during that window ``b`` is truly stationary at gap == 0
-    (the contact emission of THEORY.md s.4 wants both ``gap ~ 0`` and twist ~ 0). A hard
-    z-step would inject a velocity transient that the s.4 pre-differentiation smoothing
+    (the contact emission of THEORY.md §4 wants both ``gap ~ 0`` and twist ~ 0). A hard
+    z-step would inject a velocity transient that the §4 pre-differentiation smoothing
     bleeds across the whole window, defeating the contact peak — so we author a settled
     rest, exactly as a real landing would look after touchdown.
 
@@ -144,7 +144,7 @@ def _two_edge_scene(T: int = 240) -> MultiBodyScene:
 
 
 # --------------------------------------------------------------------------------------
-# build_candidate_edges — the s.8 broad-phase proximity prune
+# build_candidate_edges — the §8 broad-phase proximity prune
 # --------------------------------------------------------------------------------------
 
 
@@ -289,7 +289,7 @@ def test_detect_scene_subset_posterior_rows_are_distributions():
     ``detect_scene`` marginalizes the subset posterior away into per-edge columns, so we
     re-run the joint forward-backward over the ``2**E`` subset alphabet exactly as the
     detector does and check the *full* subset posterior gamma is a proper per-frame
-    distribution (THEORY.md s.4: posteriors are normalized).
+    distribution (THEORY.md §4: posteriors are normalized).
     """
     from contact import hmm
 
@@ -338,7 +338,7 @@ def test_detect_scene_empty_graph():
 
 
 # --------------------------------------------------------------------------------------
-# Exactness of the joint inference (THEORY.md s.8: 2**E enumeration is EXACT)
+# Exactness of the joint inference (THEORY.md §8: 2**E enumeration is EXACT)
 # --------------------------------------------------------------------------------------
 
 
@@ -406,7 +406,7 @@ def test_joint_inference_is_exact_enumeration_for_E2():
 
 
 # --------------------------------------------------------------------------------------
-# consistency.energy_log_factor — the s.8 global energy/dissipation factor
+# consistency.energy_log_factor — the §8 global energy/dissipation factor
 # --------------------------------------------------------------------------------------
 
 
@@ -436,7 +436,7 @@ def test_energy_log_factor_noop_when_energy_flat():
 
     Every body is perfectly static at a fixed height, so KE == 0 and PE is constant: dE is
     identically zero, leaving the dissipation factor nothing to arbitrate. The documented
-    contract is then all-zeros (THEORY.md s.8: a soft factor that abstains when it cannot
+    contract is then all-zeros (THEORY.md §8: a soft factor that abstains when it cannot
     be evaluated honestly).
     """
     T = 80
@@ -527,7 +527,7 @@ def test_consistency_factors_accept_integer_index_subsets():
 
 
 def test_detect_scene_energy_prior_active_and_shifts_posterior():
-    """The s.8 energy prior is on by default and demonstrably couples the joint inference.
+    """The §8 energy prior is on by default and demonstrably couples the joint inference.
 
     Two assertions, both of which the old no-op bug would fail:
       1. ``meta['energy_prior_active']`` is ``True`` for a moving two-edge scene under the
