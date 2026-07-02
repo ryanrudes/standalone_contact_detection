@@ -76,7 +76,6 @@ def test_contact_module_scope_imports_are_method_substrate_only():
 
 def test_import_contact_loads_no_apparatus(fresh: bool = True):
     """Importing the estimator must not load the oracle stack into the process."""
-    import importlib
     import subprocess
 
     code = (
