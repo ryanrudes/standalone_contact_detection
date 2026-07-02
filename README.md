@@ -62,6 +62,34 @@ contact despite huge world-frame velocity.
 
 See THEORY.md for the rationale behind every clause above.
 
+## The story — each idea forced by a concrete failure of the one before it
+
+- **§1 Contact is *relative & geometric*.** There is no privileged floor — a foot on a
+  moving skateboard is in solid contact though it screams across the world. So every
+  quantity is measured in the *support's* frame: the signed **gap** and the relative
+  **twist** (3 linear + 3 angular velocity) at the contact.
+- **§2 Contact obeys a complementarity law** (Signorini: `g≥0, λ≥0, g·λ=0`). "In
+  contact?" is exactly "which branch are we on?" — detecting the active set.
+- **§3 A contact constrains *motion*; the pattern of constraint is the contact
+  *type*.** Each **mode** is a subspace of the 6-D twist (rolling = tangential velocity
+  *coupled* to spin), distinguished by the correlations between channels, not any
+  channel alone.
+- **§4 We never see truth, so we reason probabilistically:** each mode is a *proper
+  generative density* over (gap, twist); the decision is a calibrated **likelihood
+  ratio**, free vs. contact.
+- **§5 Contact persists in time — a hybrid dynamical system.** Its discrete shadow is
+  an **HMM**: forward–backward gives the smoothed P(contact); Viterbi gives the clean
+  segmentation; a gap-gated transition and an explicit-duration (semi-Markov) dwell
+  replace every ad-hoc cleanup heuristic.
+- **§6 Make/break instants are singular — impacts.** A velocity step (a matched
+  filter) times touchdown sub-frame and, with mass, reads the impulse.
+- **§7 What is *knowable*?** Force magnitude is unobservable from kinematics alone;
+  **compliance** (`λ = k·δ`) is the regularizer that restores it. The friction cone
+  predicts stick vs. slip.
+- **§8 Assemble the whole object:** a Bayesian posterior over *active-constraint
+  structures* on a multi-body **contact graph** — the single-pair estimator run per
+  edge and fused into a joint active-set posterior.
+
 ## Package layout
 
 | module | role | THEORY.md |

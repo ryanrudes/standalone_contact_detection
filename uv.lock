@@ -1221,7 +1221,7 @@ wheels = [
 [[package]]
 name = "standalone-contact-detection"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "clarabel" },
     { name = "coal" },

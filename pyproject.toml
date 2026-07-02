@@ -20,6 +20,15 @@ dev = [
     "pytest>=8.0.0",
 ]
 
+# Install the project itself (editable) so `import contact` works from anywhere — tests,
+# scripts, a REPL — with no sys.path tricks.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["contact"]
+
 # The vendored general Markov-process library (markovlib/) — published on PyPI as `marmo`, imported
 # as `markovlib`; the contact engines delegate to it. Consumed as an editable path dependency.
 [tool.uv.sources]

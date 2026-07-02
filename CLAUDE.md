@@ -35,48 +35,33 @@ uv run python detect_scene.py --scene person_on_skateboard
 # Synced side-by-side videos (writes under git-ignored media/)
 uv run python viz.py person_on_skateboard --pairs        # add --force for force-mediated contacts
 
-# Tests (math + integration + expectation asserts)
+# Tests (math + integration + expectation asserts; pytest is scoped via pyproject testpaths)
 uv run pytest
 uv run pytest tests/test_units.py::test_name             # single test by node id
 uv run pytest -k "rolling and not mujoco"                # single test by keyword
 uv run pytest test_main.py                               # the rung-0 toy's tests (root, imports main.py)
 
-# The two non-pytest validation harnesses
+# The non-pytest validation harness
 uv run python verify_demos.py                            # PASS/WARN/FAIL per demo vs its physical story
-uv run python verify_standalone.py                       # standalone ≡ package, bit-for-bit (see below)
-uv run python contact_detection_standalone.py            # the standalone's own synthetic self-demo
-uv run python contact_detection_standalone.py --check    # standalone self-tests: densities proper (∫=1) + §1/§4 invariants
 ```
 
 Scenario/scene names live in `contact.mujoco_gen.SCENARIOS` / `.SCENES` (also listed in the README).
-`detect.py`'s `--plot` path is a hardcoded absolute path; pass `--no-plot` when you only want scores.
 
 No linter/type-checker is wired into the project (no dev-dep, no config). The local `.ruff_cache/` and
 `.mypy_cache/` (3.12, over `contact/`) show the author runs them ad hoc — `uvx ruff check` /
 `uvx mypy contact` with default settings — not as a gate.
 
-## Architecture: two implementations, one method
+## Architecture
 
-This is the central, non-obvious fact about the repo:
+The **`contact/` package** is the single implementation of the method, validated against MuJoCo
+physics; the module-to-THEORY-§ map is the table in the README. (A historical single-file literate
+retelling, `contact_detection_standalone.py`, plus its bit-for-bit equivalence gate, lived here
+through the `standalone-final` tag — retired when the goal shifted from one readable file to a
+readable repository.) Do not edit tests to make an expectation check pass — fix the code.
 
-1. **`contact/` package** — the canonical, modular implementation (~33 modules), validated against
-   MuJoCo physics. Module-to-THEORY-§ map is the table in the README.
-2. **`contact_detection_standalone.py`** — a single-file *literate retelling* of the whole method,
-   readable top-to-bottom (§0→§8 banners inside). It **imports nothing from `contact/`**, depends only
-   on numpy + a few scipy primitives, and is **bit-for-bit output-equivalent** to the package. Its
-   public surface mirrors the package: `observe`, `ContactDetector().detect`, `detect_scene`, `score`.
-3. **`verify_standalone.py`** — the equivalence gate: the *only* place both are imported, it runs each
-   detector on the same recorded observations across every scenario/scene (incl. the `--stiffness`
-   force-gauge and measured-force paths) and asserts every output field is identical to ~1e-9.
+### The pipeline (the narrow waist)
 
-The standalone file is the owner's active focus. **Any change to the method's numerics must be made
-in both places and re-verified with `verify_standalone.py`; the standalone must stay numpy/scipy-only
-and import nothing from `contact/`.** Do not edit tests to make an equivalence or expectation check
-pass — fix the code.
-
-### The shared pipeline (the narrow waist)
-
-Both implementations are the same data flow, and most modules slot onto one stage of it:
+The implementation is one data flow, and most modules slot onto one stage of it:
 
 ```
 generate(scenario)              MuJoCo truth factory; exposes only noisy poses, withholds contacts
@@ -92,7 +77,7 @@ detect_scene(scene)             the single-pair detector lifted to a contact gra
 
 Inference **engines** are generic and contact-free: `HMM` / `SemiMarkovHMM` are `TemporalSmoother`s
 that turn a per-frame log-emission matrix into a smoothed posterior + MAP path. The contact **science**
-they consume is built in three encapsulated layers (mirrored bit-for-bit in both implementations):
+they consume is built in three encapsulated layers:
 `Density` primitives (frozen dataclasses — `Normal1D`, `SplitNormalGap`, `OffsetMagnitude1D/2D`,
 `MixZero1D/2D`, `UniformClearance`, … — each a proper *unit-mass* log-density wrapping the `_log_*`
 math); the six `MODES`, each now PURELY a kinematic *composition* of `Density`s over its channels
@@ -133,7 +118,8 @@ geometry, differentiation), integration, **expectation checks** (`contact/verifi
 encode each demo's physically-expected contact/mode *story* (e.g. `push_to_slide` must go
 static→sliding; `moving_support` must read static despite ~1.4 m of world motion) and assert the
 detection matches it — not merely a passing IoU — and **executable-derivation checks**
-(`tests/test_density.py`, `tests/test_invariants.py`; the standalone's `--check`) that turn THEORY's
-prose claims into assertions: each `Density` is proper (∫=1), the documented limit laws hold, `observe`
-is support-relative, and rolling's `Z_res` is correct. When you change behavior, the expectation checks
-and the standalone-equivalence gate are what catch regressions; run both.
+(`tests/test_density.py`, `tests/test_invariants.py`) that turn THEORY's prose claims into
+assertions: each `Density` is proper (∫=1), the documented limit laws hold, `observe` is
+support-relative, and rolling's `Z_res` is correct. `tests/test_synthetic.py` is the simulator-free
+end-to-end run (analytic truth → observe → detect → score). When you change behavior, the
+expectation checks are what catch regressions; run `uv run pytest` and `verify_demos.py`.
