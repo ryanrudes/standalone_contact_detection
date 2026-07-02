@@ -39,7 +39,7 @@ from contact.config import ImpactParams, MaterialParams
 from contact.types import ContactObservations
 
 # A single fixed seed so every scenario-backed test is reproducible (the seed only
-# drives the additive mocap noise in mujoco_gen.generate; the physics is deterministic).
+# drives the additive mocap noise in oracle.generate; the physics is deterministic).
 SEED = 12345
 HZ = 200.0
 
@@ -128,12 +128,13 @@ def test_detect_impacts_smooth_signal_returns_none():
 
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen  # noqa: E402  (after the skip guard)
+from contact import geometry
+import oracle  # noqa: E402  (after the skip guard)
 
 
 def _observe(scenario_name: str):
     """generate -> observe one scenario (THEORY.md s.9 observable channel)."""
-    sc = mujoco_gen.generate(scenario_name, seed=SEED, hz=HZ)
+    sc = oracle.generate(scenario_name, seed=SEED, hz=HZ)
     obs = geometry.observe(
         sc.moving, sc.support, sc.surface, sc.contact_point_local,
         geometry=getattr(sc, "geometry", None),
@@ -279,7 +280,7 @@ def test_observability_demo_indeterminate_rig():
     indeterminacy: the per-corner force is pinned to its own measurable penetration and
     recovered to numerical precision.
     """
-    sc = mujoco_gen.generate("indeterminate_rig", seed=SEED, hz=HZ)
+    sc = oracle.generate("indeterminate_rig", seed=SEED, hz=HZ)
     cp = sc.meta["contact_points"]
     k = sc.meta["stiffness"]
 
@@ -291,7 +292,7 @@ def test_observability_demo_indeterminate_rig():
     assert np.isfinite(k) and k > 0.0, "compliance stiffness must be identified"
 
     # Evaluate force recovery over the QUIET, SETTLED tail (last quarter), exactly the
-    # window over which mujoco_gen identified the stiffness slope: there the
+    # window over which oracle.factory identified the stiffness slope: there the
     # velocity-dependent damper b*delta_dot has died out so the measured force is the
     # pure spring f = k*delta. The touchdown transient (force leads penetration) is
     # excluded -- evaluating compliance against the transient would unfairly inflate the

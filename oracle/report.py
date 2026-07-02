@@ -845,8 +845,8 @@ def plot_graph(
         print(f"plot_graph: matplotlib unavailable ({exc!r}); skipping plot.")
         return
 
-    from . import geometry  # local import: keep report importable without geometry at top
-    from .graph import _resolve_support  # the world-floor synthesizer (THEORY.md §1)
+    from contact import geometry  # local import: keep report importable without geometry at top
+    from contact.graph import _resolve_support  # the world-floor synthesizer (THEORY.md §1)
 
     edges = list(graph_result.edges)
     t = np.asarray(graph_result.t, dtype=float).ravel()

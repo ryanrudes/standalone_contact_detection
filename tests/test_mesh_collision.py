@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 pytest.importorskip("mujoco")  # the mesh-vs-primitive tests resolve over MuJoCo trajectories
 
-import contact.mujoco_gen as mujoco_gen  # noqa: E402
+import oracle  # noqa: E402
 from contact.geometry_resolvers import (  # noqa: E402
     BoxPlane,
     MeshConvex,
@@ -147,7 +147,7 @@ class TestMeshResolvers:
         ``MeshPlane`` is exactly ``BoxPlane``'s per-corner signed-distance arithmetic lifted to an
         arbitrary cloud, so a box's own corners must reproduce the primitive bit-for-bit over the
         whole tumbling trajectory."""
-        raw = mujoco_gen.generate("tumbling_box")
+        raw = oracle.generate("tumbling_box")
         he = np.array([0.1, 0.1, 0.1])
         corners = np.array([np.array(s) * he for s in itertools.product((-1.0, 1.0), repeat=3)])
         g_mesh, n_mesh = _min_gap_rep(MeshPlane(corners, raw.surface).resolve(raw.moving, raw.support))
@@ -165,7 +165,7 @@ class TestMeshResolvers:
         ``MeshConvex`` is the GJK/EPA generalization of ``SphereSphere``; on the separated frames
         of the ball-ball trajectory the two must agree to within the icosphere tessellation error
         (~few mm at this sampling)."""
-        scene = mujoco_gen.generate_scene("two_balls_collide")
+        scene = oracle.generate_scene("two_balls_collide")
         ball_a = scene.bodies["ballA"]
         ball_b = scene.bodies["ballB"]
         mesh_a = _fib_sphere(200, 0.05)

@@ -21,14 +21,15 @@ Three scenes:
 
 SELF-CONTAINMENT (THEORY.md s.9 / the builder contract): this module imports ONLY
 ``mujoco``, ``numpy``, and ``contact.types``. It defines its own tiny ``<option>`` /
-name->id helpers so it never imports ``mujoco_gen`` (which imports THIS file at its
+name->id helpers from the ``oracle._mjcf`` leaf and registers via ``oracle.registry.scene``
+(a leaf that imports nothing, so there is no
 end -- importing it back would be a cycle). The generic simulate/label/score code in
-``mujoco_gen`` does everything else: we only build the model + the build dict.
+cycle). ``oracle.factory`` does everything else: we only build the model + the build dict.
 
 A scene builder may pin its own recording rate via ``build["record_hz"]``: the truth
 labeler samples each edge's active set only on RECORDED frames (every 1/hz s), so a brief
 body-to-body strike can be sub-frame at the default 100 Hz and register only as a single
-degenerate frame. ``mujoco_gen.generate_scene`` records at ``max(caller hz, record_hz)``,
+degenerate frame. ``oracle.factory.generate_scene`` records at ``max(caller hz, record_hz)``,
 so it never narrows a caller asking for an even higher rate.
 """
 
@@ -40,8 +41,10 @@ import mujoco
 
 from ._mjcf import body_dofadr as _dofadr, body_id as _bid, options as _options
 
-# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
-# (which imports this file at its end to register the builders) stays cycle-free.
+from oracle.registry import scene
+
+# Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
+# leaf the builders below self-register into — all cycle-free.
 
 
 # Shared sizes (kept as named constants so surface points / tracked material points line up).
@@ -52,6 +55,7 @@ _BALL_R = 0.05          # sphere radius (m) for the two-balls scene
 # Scene 1: two balls collide
 # ======================================================================================
 
+@scene("two_balls_collide")
 def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
     """Two spheres on the floor; ball A is sent into ball B and exchanges momentum.
 
@@ -136,9 +140,9 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
     # Phase-1 sphere-sphere geometry (DESIGN.md III.5) for the ball<->ball edge. Lazy import,
     # mirroring geometry.observe()'s own lazy FlatRegion import: keeps this module's
     # module-load-time dependencies just mujoco/numpy (the cycle-free contract documented in
-    # the module docstring and the mujoco_gen registry merge) since geometry_resolvers is only
+    # the module docstring and the registry) since geometry_resolvers is only
     # touched when a builder actually runs, long after every module has loaded.
-    from .geometry_resolvers import SphereSphere
+    from contact.geometry_resolvers import SphereSphere
 
     def launch(m: mujoco.MjModel, d: mujoco.MjData) -> None:
         # Brisk shove of ball A toward +x. The floor is LOW-friction so A arrives SLIDING with
@@ -166,7 +170,7 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
                 "moving_geoms": ["ballAg"],
                 "support_geoms": ["floor"],
                 # Observation-side plane raised one radius so the tracked CENTER reads gap ~0
-                # at floor contact (the sphere convention from mujoco_gen's rolling_ball).
+                # at floor contact (the sphere convention from scenarios_core's rolling_ball).
                 "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
                 "surface_normal_local": np.array([0.0, 0.0, 1.0]),
                 "contact_point_local": np.array([0.0, 0.0, 0.0]),
@@ -231,6 +235,7 @@ _DOM_GAP = 0.085                            # center-to-center spacing along +x 
 _N_DOM = 4                                  # number of dominoes (4 => the cascade reliably completes)
 
 
+@scene("dominoes")
 def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     """A row of upright thin boxes; the first is shoved and topples into the next.
 
@@ -358,6 +363,7 @@ _NC_BALL_Z = 0.28       # rest height of the hanging balls (m) -- suspended, wel
 _NC_LIFT = 0.55         # angle (rad ~31 deg) the end ball is lifted to, then RELEASED FROM REST
 
 
+@scene("newtons_cradle")
 def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
     """A real SUSPENDED Newton's cradle (THEORY.md s.6: impacts propagating through a line).
 
@@ -435,7 +441,7 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
     # for the same reason as in _build_two_balls_collide: keep this module's module-load-time
     # deps just mujoco/numpy (the documented cycle-free contract); geometry_resolvers is only
     # imported when a builder runs, long after all modules have loaded.
-    from .geometry_resolvers import SphereSphere
+    from contact.geometry_resolvers import SphereSphere
 
     # Adjacent ball<->ball edges: the impulse propagates along these. Each edge resolves with
     # SphereSphere so the contact normal is the line-of-centres (c_{i+1} - c_i)/||.||, NOT a
@@ -481,16 +487,3 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
     return model, build
 
 
-# --------------------------------------------------------------------------------------
-# Registries (the builder contract: module-level dicts mapping name -> builder).
-# --------------------------------------------------------------------------------------
-
-#: No single-pair scenarios in this module -- everything here is a multi-body SCENE.
-SCENARIO_BUILDERS: dict[str, callable] = {}
-
-#: Multi-body scenes with body-to-body collisions / chained impacts (THEORY.md s.8).
-SCENE_BUILDERS: dict[str, callable] = {
-    "two_balls_collide": _build_two_balls_collide,
-    "dominoes": _build_dominoes,
-    "newtons_cradle": _build_newtons_cradle,
-}

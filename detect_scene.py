@@ -3,7 +3,7 @@
 
 This is the scene-level analogue of the single-pair detection entrypoint, exercising
 rung 5 of the pragmatic ladder (THEORY.md s.10): it takes one of the multi-body SCENES
-(``contact.mujoco_gen.SCENES``), runs the full graph detector
+(``oracle.SCENES``), runs the full graph detector
 (``contact.graph.detect_scene``) over its candidate edges, and reports
 
   * per edge: the detected contact intervals + dominant twist-subspace mode (s.3), scored
@@ -36,7 +36,8 @@ import sys
 
 import numpy as np
 
-from contact import geometry, mujoco_gen
+from contact import geometry
+import oracle
 from contact.config import DetectorConfig
 from contact.graph import _resolve_support, build_candidate_edges, detect_scene
 from oracle.report import plot_graph, print_graph_report
@@ -98,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--scene",
         default="person_on_skateboard",
-        choices=mujoco_gen.SCENES,
+        choices=oracle.SCENES,
         help="which multi-body scene to generate and detect (default: person_on_skateboard).",
     )
     parser.add_argument(
@@ -124,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # --- generate the scene (simulate -> noised poses + withheld per-edge truth, s.9) ---
-    scene = mujoco_gen.generate_scene(args.scene, seed=args.seed, noise_m=args.noise)
+    scene = oracle.generate_scene(args.scene, seed=args.seed, noise_m=args.noise)
 
     # --- broad-phase (s.8): identity on the simulator's vouched edges, a guard otherwise.
     candidate = build_candidate_edges(scene)

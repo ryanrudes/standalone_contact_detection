@@ -9,7 +9,7 @@ MuJoCo truth) against that story and report PASS / WARN / FAIL per check.
 
 Used by ``verify_demos.py`` (human-readable report) and ``tests/test_expectations.py``
 (asserts that the headline checks hold). Importing this module is cycle-safe: it imports
-the package's public API, not ``mujoco_gen`` internals.
+the public API, not factory internals.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from contact import mujoco_gen  # moves into oracle/ next
+from oracle import factory
+from oracle.registry import SCENARIO_BUILDERS, SCENE_BUILDERS
 from contact.geometry import observe
 from contact.model import ContactDetector
 from contact.graph import detect_scene
@@ -124,7 +125,7 @@ SCENE_EXPECT: dict[str, dict] = {
 
 def verify_scenario(name: str, seed: int = 0) -> list[Check]:
     spec = SCENARIO_EXPECT[name]
-    raw = mujoco_gen.generate(name, seed=seed)
+    raw = factory.generate(name, seed=seed)
     res = ContactDetector().detect(
         observe(raw.moving, raw.support, raw.surface, raw.contact_point_local,
                 geometry=getattr(raw, "geometry", None))
@@ -183,7 +184,7 @@ def verify_scenario(name: str, seed: int = 0) -> list[Check]:
 def verify_scene(name: str, seed: int = 0) -> list[Check]:
     from .visualize import _config_for_scene
     spec = SCENE_EXPECT[name]
-    sc = mujoco_gen.generate_scene(name, seed=seed)
+    sc = factory.generate_scene(name, seed=seed)
     gr = detect_scene(sc, _config_for_scene(sc, None))
     checks: list[Check] = []
 
@@ -298,10 +299,10 @@ def verify_scene(name: str, seed: int = 0) -> list[Check]:
 
 def verify_all(seed: int = 0) -> dict[str, list[Check]]:
     out: dict[str, list[Check]] = {}
-    for name in mujoco_gen.SCENARIOS:
+    for name in SCENARIO_BUILDERS:
         if name in SCENARIO_EXPECT:
             out[name] = verify_scenario(name, seed)
-    for name in mujoco_gen.SCENES:
+    for name in SCENE_BUILDERS:
         if name in SCENE_EXPECT:
             out[name] = verify_scene(name, seed)
     return out

@@ -30,12 +30,10 @@ import numpy as np
 from contact import (
     ContactDetector,
     DetectorConfig,
-    SCENARIOS,
     contact_implicit_from_raw,
-    generate,
     observe,
 )
-from oracle import report
+from oracle import SCENARIOS, generate, report
 
 #: Where the diagnostic figure is written (unless --no-plot): next to this script, like
 #: detect_scene.py's default (the .png is git-ignored).

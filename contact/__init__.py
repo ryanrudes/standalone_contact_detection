@@ -1,8 +1,10 @@
-"""Contact detection from first principles.
+"""Contact detection from first principles — the estimator.
 
-A probabilistic, support-relative contact-state estimator. See THEORY.md for the
-full derivation. This top-level module re-exports the stable data contracts; the
-detector and generators are imported from their submodules.
+A probabilistic, support-relative contact-state estimator. See THEORY.md for the full
+derivation. This package is the method only: it consumes noisy poses and never sees
+ground truth. Truth generation, scoring, and visualization live in the sibling
+`oracle` package (`oracle` imports `contact`; never the reverse — the import law that
+makes THEORY §9's "truth is withheld from the detector" structural).
 """
 
 from __future__ import annotations
@@ -113,12 +115,6 @@ from .structure_inference import (
 )
 from .uncertainty import emission_tempering
 
-# The MuJoCo truth factory (THEORY.md s.9). Imported lazily-friendly but eager here:
-# `mujoco` is a declared dependency, and the top-level convenience API exposes the
-# generator alongside the detector. `generate`/`SCENARIOS` are the single-pair scenarios;
-# `generate_scene`/`SCENES` are the multi-body contact-graph scenes (s.8).
-from .mujoco_gen import SCENARIOS, SCENES, generate, generate_scene
-
 __all__ = [
     "ALL_STATES",
     "CONTACT_MODES",
@@ -153,13 +149,9 @@ __all__ = [
     "InverseDynamicsResult",
     "ContactDetector",
     "observe",
-    "generate",
-    "SCENARIOS",
     # multi-body contact-graph layer (THEORY.md s.8, rung 5)
     "build_candidate_edges",
     "detect_scene",
-    "generate_scene",
-    "SCENES",
     # s.5-s.7 leaf entrypoints
     "detect_impacts",
     "friction_stick_slip",

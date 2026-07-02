@@ -5,7 +5,7 @@ a full contact-implicit inverse dynamics that *jointly infers contact existence,
 and force as the physically-valid explanation of the observed motion under Newton-Euler
 dynamics with complementarity and friction-cone constraints*. The module under test is
 ``contact.dynamics_id`` (``contact_implicit_from_raw`` end-to-end); the truth oracle is
-``contact.mujoco_gen`` (THEORY.md s.9: simulate -> withhold the truth from the detector
+``contact.oracle.factory`` (THEORY.md s.9: simulate -> withhold the truth from the detector
 -> score the recovery against it).
 
 What we assert, and the physics behind each tolerance
@@ -60,14 +60,14 @@ from contact.dynamics_id import contact_implicit_from_raw
 from contact.signals import gaussian_smooth
 
 # A single FIXED seed so every scenario-backed test is reproducible. The seed only drives
-# the additive mocap noise in mujoco_gen.generate; the physics itself is deterministic.
+# the additive mocap noise in oracle.generate; the physics itself is deterministic.
 SEED = 12345
 HZ = 200.0
 
 # MuJoCo (and the generator that imports it) are required for this whole suite.
 mujoco = pytest.importorskip("mujoco")  # noqa: F841
 
-from contact import mujoco_gen  # noqa: E402  (after the importorskip guard)
+import oracle  # noqa: E402  (after the importorskip guard)
 
 
 # --------------------------------------------------------------------------------------
@@ -106,7 +106,7 @@ def test_drop_rest_recovers_weight_at_rest():
     weight. A 15% band is the realistic bound the spec calls for; empirically this
     scenario lands ~1.6% off, so 15% is comfortable and not gutted.
     """
-    sc = mujoco_gen.generate("drop_rest", seed=SEED, hz=HZ)
+    sc = oracle.generate("drop_rest", seed=SEED, hz=HZ)
     res = contact_implicit_from_raw(sc)
 
     rest = _rest_window(sc)
@@ -127,7 +127,7 @@ def test_drop_rest_active_set_is_all_corners_at_rest_and_empty_in_flight():
     In free flight every corner gap is open => no candidate is active. At rest the box
     sits flat on all four bottom corners => all four are active.
     """
-    sc = mujoco_gen.generate("drop_rest", seed=SEED, hz=HZ)
+    sc = oracle.generate("drop_rest", seed=SEED, hz=HZ)
     res = contact_implicit_from_raw(sc)
 
     truth = sc.truth
@@ -167,7 +167,7 @@ def test_drop_rest_wrench_residual_small_at_rest():
     (numerical solve tolerance + the band-limited accel's small ripple). We bound it at
     5% of the weight; empirically it is ~1e-5 N (essentially the solver tolerance).
     """
-    sc = mujoco_gen.generate("drop_rest", seed=SEED, hz=HZ)
+    sc = oracle.generate("drop_rest", seed=SEED, hz=HZ)
     res = contact_implicit_from_raw(sc)
 
     rest = _rest_window(sc)
@@ -194,7 +194,7 @@ def test_drop_rest_tracks_true_summed_corner_force_over_contact():
     the under-resolved atom dominates -- comparing at matched bandwidth is the honest test,
     not a loosened one.
     """
-    sc = mujoco_gen.generate("drop_rest", seed=SEED, hz=HZ)
+    sc = oracle.generate("drop_rest", seed=SEED, hz=HZ)
     res = contact_implicit_from_raw(sc)
     cfg = DetectorConfig()
 
@@ -245,13 +245,13 @@ def test_indeterminate_rig_recovers_weight_and_valid_split():
     make it nearly determinate, so the min-norm split lands close to truth -- but that is
     luck of this rig's geometry, not something the kinematics could guarantee.)
     """
-    sc = mujoco_gen.generate("indeterminate_rig", seed=SEED, hz=HZ)
+    sc = oracle.generate("indeterminate_rig", seed=SEED, hz=HZ)
     res = contact_implicit_from_raw(sc)
     cfg = DetectorConfig()
     mu = float(cfg.material.friction)
 
     # The rig settles slowly (4 s run, compliant contact); use its quiet last quarter --
-    # the same settled tail over which mujoco_gen identifies the per-corner stiffness slope.
+    # the same settled tail over which oracle.factory identifies the per-corner stiffness slope.
     rest = _rest_window(sc, frac_start=0.75)
     mg = _weight(sc)
 

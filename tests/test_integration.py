@@ -3,7 +3,7 @@
 This is the top rung of the pragmatic ladder (THEORY.md s.10) exercised as a whole:
 for each scenario we run the *exact* workflow of THEORY.md s.9 ---
 
-    mujoco_gen.generate  ->  geometry.observe  ->  ContactDetector().detect  ->  report.score
+    oracle.generate  ->  geometry.observe  ->  ContactDetector().detect  ->  report.score
 
 --- handing the detector only the "observable" channel (noisy poses) and scoring its
 inferred posterior against the *withheld* simulator truth. Each scenario asserts the
@@ -43,13 +43,14 @@ if str(_REPO_ROOT) not in sys.path:
 # detector core does not itself depend on it).
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen
+from contact import geometry
+import oracle
 from oracle import report
 from contact.model import ContactDetector
 from contact.types import ROLLING, SLIDING, STATIC
 
 # A single fixed seed for every scenario so the whole suite is reproducible (the seed
-# only drives the additive mocap noise in mujoco_gen.generate; the physics is
+# only drives the additive mocap noise in oracle.generate; the physics is
 # deterministic). Chosen once; all thresholds below were tuned against it.
 SEED = 12345
 
@@ -66,7 +67,7 @@ def _run(name: str):
     (support-relative twist, s.1/s.3) -> detect (the HMM estimator, s.4-8) -> score
     (against the withheld truth). This is exactly the chain every test below shares.
     """
-    raw = mujoco_gen.generate(name, seed=SEED)
+    raw = oracle.generate(name, seed=SEED)
     obs = geometry.observe(
         raw.moving, raw.support, raw.surface, raw.contact_point_local,
         geometry=getattr(raw, "geometry", None),

@@ -1,6 +1,6 @@
 """Multi-body SCENES exercising stacking and multi-surface hand-off (THEORY.md s.8).
 
-These are additional :data:`contact.mujoco_gen.SCENES`-style demos focused on the
+These are additional multi-body scene demos focused on the
 *contact graph* and, above all, on the **active set as the hidden structure** we infer
 (THEORY.md s.8). A single body pair has one edge; the interesting graph signal is
 
@@ -9,9 +9,9 @@ These are additional :data:`contact.mujoco_gen.SCENES`-style demos focused on th
   off a table, going airborne, then landing on the floor -- a multi-surface hand-off).
 
 All three scenes are built with ONLY ``mujoco`` + ``numpy`` (plus the scene contract
-keys), so this module is import-safe for ``mujoco_gen`` to pull in at its end without an
+keys), registered via ``oracle.registry.scene`` (a leaf that imports nothing) without an
 import cycle: it imports no ``contact`` submodule. The simulate/label machinery in
-``mujoco_gen`` (``_simulate_scene`` / ``generate_scene`` / ``_edge_frame_truth``) does all
+``oracle.factory`` (``_simulate_scene`` / ``generate_scene`` / ``_edge_frame_truth``) does all
 the physics extraction; we only build the model + the build-dict.
 
 The mode of every active edge here is STATIC (resting boxes do not slide/roll relative to
@@ -28,8 +28,10 @@ import mujoco
 
 from ._mjcf import body_id as _bid, options as _common_options
 
-# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
-# (which imports this file at its end to register the builders) stays cycle-free.
+from oracle.registry import scene
+
+# Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
+# leaf the builders below self-register into — all cycle-free.
 
 
 # Shared box half-extent for the stacked boxes (m). Bottom-face center material point of a
@@ -41,6 +43,7 @@ _BOX_HALF = 0.06
 # Scene 1: a stable three-box stack -> several simultaneous STATIC edges.
 # --------------------------------------------------------------------------------------
 
+@scene("stacked_boxes")
 def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
     """Three equal boxes stacked on the floor, resting stably (THEORY.md s.8).
 
@@ -148,6 +151,7 @@ def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
 # Scene 2: a small stack whose TOP box is pushed off -> a CHANGING active set + impact.
 # --------------------------------------------------------------------------------------
 
+@scene("stack_topple")
 def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
     """A 2-box stack whose TOP slab is shoved off, slides off the edge, and hits the floor.
 
@@ -282,6 +286,7 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
 # Scene 3 (showcase): a box slides off a table, falls, and lands on the floor.
 # --------------------------------------------------------------------------------------
 
+@scene("box_off_table")
 def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     """A flat slab on a raised TABLE is pushed off the edge, falls, and lands FLAT on the FLOOR.
 
@@ -406,16 +411,3 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     return model, build
 
 
-# --------------------------------------------------------------------------------------
-# Registries (the contract: module-level SCENARIO_BUILDERS and SCENE_BUILDERS).
-# --------------------------------------------------------------------------------------
-
-#: No single-pair scenarios in this module.
-SCENARIO_BUILDERS: dict[str, callable] = {}
-
-#: Multi-body scenes: stacking + multi-surface hand-off (THEORY.md s.8).
-SCENE_BUILDERS: dict[str, callable] = {
-    "stacked_boxes": _build_stacked_boxes,
-    "stack_topple": _build_stack_topple,
-    "box_off_table": _build_box_off_table,
-}

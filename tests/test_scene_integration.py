@@ -3,7 +3,7 @@
 This is rung 5 of the pragmatic ladder (THEORY.md s.10) exercised as a whole. For each
 MuJoCo *scene* we run the exact s.8/s.9 workflow ---
 
-    mujoco_gen.generate_scene  ->  graph.detect_scene  ->  report.score (per edge)
+    oracle.generate_scene  ->  graph.detect_scene  ->  report.score (per edge)
 
 --- handing the detector only the observable channel (noisy body poses) and scoring its
 inferred *joint active-set structure* and per-edge contact decisions against the withheld
@@ -66,7 +66,8 @@ if str(_REPO_ROOT) not in sys.path:
 # The simulator is the only hard external dependency of this suite; skip cleanly if absent.
 mujoco = pytest.importorskip("mujoco")
 
-from contact import graph, mujoco_gen
+from contact import graph
+import oracle
 from oracle import report
 from contact.config import DetectorConfig
 from contact.types import FREE, ROLLING, SLIDING, STATIC
@@ -131,7 +132,7 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     a slow human slide and would call the fast steady slip "free"). It then reads SLIDING --
     rolling-vs-sliding here is set by which material point the rig tracks, THEORY.md s.3.
     """
-    scene = mujoco_gen.generate_scene("person_on_skateboard", seed=SEED)
+    scene = oracle.generate_scene("person_on_skateboard", seed=SEED)
 
     cfg = DetectorConfig()
     # Tune the translational-velocity emission to the board's actual fast-steady-slip regime
@@ -197,7 +198,7 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     # The edge tracks a BOARD-fixed point (the board origin), which translates over the
     # ground at the board's travel speed -> a steady tangential slip -> SLIDING. The scene's
     # truth mode is now classified from that same board-fixed point (truth_mode_body="board"
-    # in mujoco_gen), so truth and observation agree on SLIDING. (The wheels' material point
+    # in oracle.factory), so truth and observation agree on SLIDING. (The wheels' material point
     # truly rolls, but that point is not tracked -- THEORY.md s.3: rolling vs sliding depends
     # on which material point you follow.) We accept ROLLING too for robustness, but assert
     # the edge is genuinely MOVING, not STATIC/FREE.
@@ -230,7 +231,7 @@ def test_box_on_two_blocks_active_set_cardinality_drops_when_support_removed():
     tolerance window of the true structural change.
 
     The removal is genuinely OBSERVABLE: blockR rides a vertical slide joint and is decoupled
-    from the floor collision group (mujoco_gen._build_box_on_two_blocks), so when commanded
+    from the floor collision group (oracle._build_box_on_two_blocks), so when commanded
     down it descends the full ~0.30 m into the well below the deck -- opening a ~0.30 m gap on
     the box_blockR edge while the wide blockL holds the box level (the box stays put, the
     support leaves). That separation is three orders of magnitude above the mocap noise floor,
@@ -240,7 +241,7 @@ def test_box_on_two_blocks_active_set_cardinality_drops_when_support_removed():
     s.7 trap. The scene now physically realizes the separation it labels.)
     """
     # Realistic mocap noise (the scene default ~0.5 mm) -- the ~0.30 m separation dwarfs it.
-    scene = mujoco_gen.generate_scene("box_on_two_blocks", seed=SEED)
+    scene = oracle.generate_scene("box_on_two_blocks", seed=SEED)
 
     # Default detector config: no gap-emission tightening, no EM disabling. The separation is
     # large and unambiguous, so the stock detector recovers the structural change on its own.

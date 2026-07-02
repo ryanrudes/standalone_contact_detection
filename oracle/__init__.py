@@ -19,6 +19,26 @@ The import law, machine-checked in `tests/test_import_law.py`: **`oracle` import
 
 from __future__ import annotations
 
+# The truth factories. Importing the builder modules is what populates the registry
+# (each builder self-registers via `oracle.registry.scenario` / `.scene`), so the
+# SCENARIOS/SCENES lists below are complete exactly because these imports ran first.
+from oracle import (  # noqa: F401  (imported for their registration side effect)
+    scenarios_core,
+    scenarios_impacts,
+    scenarios_motion,
+    scenes_chains,
+    scenes_graph,
+    scenes_stacks,
+)
+from oracle.factory import generate, generate_scene
+from oracle.registry import SCENARIO_BUILDERS, SCENE_BUILDERS
+from oracle.synthetic import synthetic_drop_rest_liftoff
+
+#: The available single-pair scenario names (`generate`) and multi-body scene names
+#: (`generate_scene`), in registration order (core first, then the themed modules).
+SCENARIOS: list[str] = list(SCENARIO_BUILDERS)
+SCENES: list[str] = list(SCENE_BUILDERS)
+
 from oracle.report import (
     plot_graph,
     plot_result,
@@ -31,6 +51,11 @@ from oracle.verification import verify_scenario, verify_scene, worst_status
 from oracle.visualize import animate_scene, animate_scenario
 
 __all__ = [
+    "generate",
+    "generate_scene",
+    "SCENARIOS",
+    "SCENES",
+    "synthetic_drop_rest_liftoff",
     "score",
     "print_report",
     "print_inverse_dynamics",

@@ -1,6 +1,6 @@
 """Shared MuJoCo scene-construction helpers for the truth factory and the demo builders.
 
-A dependency-light leaf (``mujoco`` only) so both :mod:`contact.mujoco_gen` and the
+A dependency-light leaf (``mujoco`` only) so both :mod:`oracle.factory` and the
 ``contact.demos_*`` builders it imports at the end can share these without an import cycle.
 It replaces the byte-identical per-file copies that the old "self-contained, no
 cross-import" rule used to force into every builder module.

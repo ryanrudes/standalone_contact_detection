@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from contact import mujoco_gen  # moves into oracle/ next
+from oracle import factory, registry
 from contact.config import DetectorConfig
 from contact.geometry import observe
 from contact.graph import detect_scene
@@ -68,7 +68,7 @@ def _camera(mujoco, lookat: np.ndarray, distance: float, azimuth: float, elevati
 
 
 def _capture_xml(builder):
-    """Run a mujoco_gen builder, capturing the XML it compiles (so we can re-skin it).
+    """Run a registered scenario/scene builder, capturing the XML it compiles (so we can re-skin it).
 
     The builders compile via ``mujoco.MjModel.from_xml_string``; we briefly wrap it to grab
     the XML. Returns (xml_or_None, build_dict). Pure capture — no model is kept."""
@@ -295,7 +295,7 @@ def _step_cadence(model, build, hz):
 
 
 def _stepped_data(mujoco, model, build):
-    """Build MjData and apply the SAME prelude as mujoco_gen._simulate / _simulate_scene so
+    """Build MjData and apply the SAME prelude as factory._simulate / _simulate_scene so
     the rendered motion matches the detected motion exactly: forward -> optional `settle`
     phase (stepped with `forcing`, clock reset) -> one-shot `init` -> one-shot `launch`.
 
@@ -354,7 +354,7 @@ def _frame_trajectory(mujoco, model, build, hz):
 
 def _render_run(builder, hz, width, height, distance, azimuth, elevation):
     """Studio-render a scenario/scene: re-skin its model, then step it exactly as
-    ``mujoco_gen._simulate`` does, capturing one RGB frame per recorded frame from a FIXED
+    ``factory._simulate`` does, capturing one RGB frame per recorded frame from a FIXED
     camera framed to the whole trajectory. ``distance`` overrides the auto-framed distance."""
     import mujoco
 
@@ -383,13 +383,13 @@ def _render_run(builder, hz, width, height, distance, azimuth, elevation):
 def render_scenario_frames(name, seed=0, hz=100.0, width=640, height=640,
                            distance=None, azimuth=120.0, elevation=-16.0):
     """(frames (N,H,W,3), body->rgb map) of a scenario, synced to ``generate(name, ...)``."""
-    return _render_run(mujoco_gen._BUILDERS[name], hz, width, height, distance, azimuth, elevation)
+    return _render_run(registry.SCENARIO_BUILDERS[name], hz, width, height, distance, azimuth, elevation)
 
 
 def render_scene_frames(name, seed=0, hz=100.0, width=640, height=640,
                         distance=None, azimuth=120.0, elevation=-16.0):
     """(frames (N,H,W,3), body->rgb map) of a scene, synced to ``generate_scene(name, ...)``."""
-    return _render_run(mujoco_gen._SCENE_BUILDERS[name], hz, width, height, distance, azimuth, elevation)
+    return _render_run(registry.SCENE_BUILDERS[name], hz, width, height, distance, azimuth, elevation)
 
 
 # --------------------------------------------------------------------------------------
@@ -590,13 +590,13 @@ def animate_scenario(name, out_path, seed=0, hz=100.0, fps=50, config=None,
                      width=560, height=560, **cam):
     """Render a synced side-by-side animation of a single-pair scenario to ``out_path``."""
     config = config or DetectorConfig()
-    raw = mujoco_gen.generate(name, seed=seed, hz=hz)
+    raw = factory.generate(name, seed=seed, hz=hz)
     obs = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local,
                   config.vel_smooth_time, geometry=getattr(raw, "geometry", None))
     result = ContactDetector(config).detect(obs)
     # Scenarios may pin a faster recording rate too (e.g. restitution_bounce 250 Hz) -- render
     # at that SAME rate or the scene and the detection panels run at different speeds / lengths.
-    _, _b = mujoco_gen._BUILDERS[name]()
+    _, _b = registry.SCENARIO_BUILDERS[name]()
     rate = max(float(hz), float(_b.get("record_hz") or hz))
     frames, color_map = render_scenario_frames(name, seed=seed, hz=rate, width=width, height=height, **cam)
     truth = raw.truth.in_contact
@@ -623,7 +623,7 @@ def _config_for_scene(scene, config):
 def animate_scene(name, out_path, seed=0, hz=100.0, fps=50, config=None,
                   width=620, height=620, **cam):
     """Render a synced animation of a multi-body scene with a per-edge active-set strip."""
-    scene = mujoco_gen.generate_scene(name, seed=seed, hz=hz)
+    scene = factory.generate_scene(name, seed=seed, hz=hz)
     config = _config_for_scene(scene, config)
     result = detect_scene(scene, config)
     # Scenes may pin a faster recording rate (build["record_hz"]) to catch brief strikes, so
@@ -631,7 +631,7 @@ def animate_scene(name, out_path, seed=0, hz=100.0, fps=50, config=None,
     # the builder) or the scene frames and the detection panels run at different speeds and
     # drift apart. (Use the nominal rec_hz, not the median observed dt, so the physics-substep
     # rounding -- hence the exact frame count -- matches generate_scene's.)
-    _, _build = mujoco_gen._SCENE_BUILDERS[name]()
+    _, _build = registry.SCENE_BUILDERS[name]()
     rec_hz = max(float(hz), float(_build.get("record_hz") or hz))
     frames, color_map = render_scene_frames(name, seed=seed, hz=rec_hz, width=width, height=height, **cam)
 
@@ -673,7 +673,7 @@ def animate_scene(name, out_path, seed=0, hz=100.0, fps=50, config=None,
 
 def _support_pose(scene, edge):
     """Resolve an edge's support PoseTrajectory, synthesizing world identity if needed."""
-    from .types import PoseTrajectory
+    from contact.types import PoseTrajectory
 
     if edge.support_body in scene.bodies:
         return scene.bodies[edge.support_body]
@@ -723,11 +723,11 @@ def _slug(s):
 
 def _gather_events(name, seed, hz, config):
     """Return (builder, rate_hz, events). Each event: dict(time,index,label,pos(3,),post,map_state)."""
-    if name in mujoco_gen.SCENES:
-        scene = mujoco_gen.generate_scene(name, seed=seed, hz=hz)
+    if name in registry.SCENE_BUILDERS:
+        scene = factory.generate_scene(name, seed=seed, hz=hz)
         config = _config_for_scene(scene, config)
         gr = detect_scene(scene, config)
-        _, b = mujoco_gen._SCENE_BUILDERS[name]()
+        _, b = registry.SCENE_BUILDERS[name]()
         rate = max(float(hz), float(b.get("record_hz") or hz))
         events = []
         for e in scene.edges:
@@ -750,14 +750,14 @@ def _gather_events(name, seed, hz, config):
                                    pos=mov[min(im.index, len(mov) - 1)], post=pe.contact_posterior,
                                    map_state=pe.map_state, a=e.moving_body, b=e.support_body,
                                    normal=_norm(im.index)))
-        return mujoco_gen._SCENE_BUILDERS[name], rate, events
+        return registry.SCENE_BUILDERS[name], rate, events
 
-    raw = mujoco_gen.generate(name, seed=seed, hz=hz)
+    raw = factory.generate(name, seed=seed, hz=hz)
     cfg = config or DetectorConfig()
     obs = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local, cfg.vel_smooth_time,
                   geometry=getattr(raw, "geometry", None))
     res = ContactDetector(cfg).detect(obs)
-    _, bd = mujoco_gen._BUILDERS[name]()
+    _, bd = registry.SCENARIO_BUILDERS[name]()
     mov = raw.moving.position
     a, b, nrm = bd["moving_body"], bd["support_body"], np.asarray(raw.surface.normal, float)
     events = []
@@ -769,7 +769,7 @@ def _gather_events(name, seed, hz, config):
         events.append(dict(time=im.time, index=im.index, label=f"impact e={im.restitution:.2f}",
                            pos=mov[min(im.index, len(mov) - 1)], post=res.contact_posterior,
                            map_state=res.map_state, a=a, b=b, normal=nrm))
-    return mujoco_gen._BUILDERS[name], hz, sorted(events, key=lambda d: d["time"])
+    return registry.SCENARIO_BUILDERS[name], hz, sorted(events, key=lambda d: d["time"])
 
 
 def _clip_animation(frames, lo, rate, ev, out_path, fps, slowmo):
@@ -956,8 +956,8 @@ def _pair_spec(name, seed, hz, config, use_force=False):
 
     tag = "   [+force sensor]" if use_force else ""
     pairs = []
-    if name in mujoco_gen.SCENES:
-        scene = mujoco_gen.generate_scene(name, seed=seed, hz=hz)
+    if name in registry.SCENE_BUILDERS:
+        scene = factory.generate_scene(name, seed=seed, hz=hz)
         config = _config_for_scene(scene, config)
         # Feed each edge's force channel from its truth normal force (a stand-in sensor) when
         # requested; otherwise the kinematics-only detection (edge_forces=None) -- unchanged.
@@ -966,7 +966,7 @@ def _pair_spec(name, seed, hz, config, use_force=False):
             if use_force else None
         )
         gr = detect_scene(scene, config, edge_forces=edge_forces)
-        _, b = mujoco_gen._SCENE_BUILDERS[name]()
+        _, b = registry.SCENE_BUILDERS[name]()
         rate = max(float(hz), float(b.get("record_hz") or hz))
         for e in scene.edges:
             pe = gr.per_edge[e.edge_id]
@@ -982,16 +982,16 @@ def _pair_spec(name, seed, hz, config, use_force=False):
                 events=evs, title=f"{name}:  {e.moving_body} ↔ {e.support_body}{tag}",
                 panel=dict(t=pe.t, feat=_feature_rows(sig, pe.normal_force), post=pe.state_posterior,
                            states=pe.states, cpost=pe.contact_posterior, mst=pe.map_state, imp=pe.impulses)))
-        return mujoco_gen._SCENE_BUILDERS[name], rate, pairs
+        return registry.SCENE_BUILDERS[name], rate, pairs
 
-    raw = mujoco_gen.generate(name, seed=seed, hz=hz)
+    raw = factory.generate(name, seed=seed, hz=hz)
     cfg = config or DetectorConfig()
     obs = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local, cfg.vel_smooth_time,
                   geometry=getattr(raw, "geometry", None))
     if use_force:
         obs = dataclasses.replace(obs, normal_force=np.asarray(raw.truth.normal_force, float)[:len(obs.t)])
     res = ContactDetector(cfg).detect(obs)
-    _, b = mujoco_gen._BUILDERS[name]()
+    _, b = registry.SCENARIO_BUILDERS[name]()
     rate = max(float(hz), float(b.get("record_hz") or hz))
     evs = [(ev.index, ev.kind) for ev in res.events]
     evs += [(im.index, f"impact e={im.restitution:.2f}") for im in res.impulses]
@@ -1001,7 +1001,7 @@ def _pair_spec(name, seed, hz, config, use_force=False):
         title=f"{name}:  {b['moving_body']} ↔ {b['support_body']}{tag}",
         panel=dict(t=obs.t, feat=_feature_rows(obs, res.normal_force), post=res.state_posterior,
                    states=res.states, cpost=res.contact_posterior, mst=res.map_state, imp=res.impulses)))
-    return mujoco_gen._BUILDERS[name], rate, pairs
+    return registry.SCENARIO_BUILDERS[name], rate, pairs
 
 
 def animate_pair(name, pair, builder, rate, out_path, fps=30, width=600, height=600, zoom=0.5):

@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from contact import mujoco_gen
+import oracle
 from oracle.verification import (
     SCENARIO_EXPECT,
     SCENE_EXPECT,
@@ -30,7 +30,7 @@ _GLYPH = {"PASS": "[OK]  ", "WARN": "[warn]", "FAIL": "[FAIL]"}
 def main() -> None:
     names = sys.argv[1:]
     if not names:
-        names = list(mujoco_gen.SCENARIOS) + list(mujoco_gen.SCENES)
+        names = list(oracle.SCENARIOS) + list(oracle.SCENES)
 
     n_pass = n_warn = n_fail = 0
     for name in names:

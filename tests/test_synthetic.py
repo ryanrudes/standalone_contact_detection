@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 
 from contact import ContactDetector, observe
-from contact.synthetic import synthetic_drop_rest_liftoff
 from contact.types import FREE, STATIC
+from oracle import synthetic_drop_rest_liftoff
 
 
 def _detect(raw):

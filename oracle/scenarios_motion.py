@@ -2,7 +2,7 @@
 
 These are additional SCENARIO builders for the MuJoCo truth factory. Each one shapes the
 *physics* so a particular twist regime (THEORY.md s.3) dominates and the truth labeler
-(``mujoco_gen._classify_mode``) reports the named mode:
+(``oracle.factory._classify_mode``) reports the named mode:
 
 * ``incline_slide`` : a box on a TILTED plane slides downhill -> SLIDING, with a
   non-vertical support normal (the gap channel is tested against a tilted plane).
@@ -15,9 +15,10 @@ These are additional SCENARIO builders for the MuJoCo truth factory. Each one sh
 
 Self-contained by contract: this module imports ONLY ``mujoco``, ``numpy`` and a couple of
 names from ``contact.types`` (the mode-string constants, for documentation only). It defines
-its own tiny <option>/id helpers so it never has to import ``mujoco_gen`` (which would create
-an import cycle, since ``mujoco_gen`` imports THIS file at its end). The generic
-simulate/label/observe path in ``mujoco_gen`` does everything else; a builder only returns
+its own tiny <option>/id helpers from the ``oracle._mjcf`` leaf and registers each builder
+by name via ``oracle.registry.scenario`` (a leaf that imports nothing, so there is no
+cycle). The generic simulate/label/observe path in ``oracle.factory`` does everything
+else; a builder only returns
 ``(model, build_dict)``.
 
 The builder contract (single-contact-pair scenarios), reproduced here for clarity:
@@ -30,7 +31,7 @@ The builder contract (single-contact-pair scenarios), reproduced here for clarit
     build["init"]      optional callable(model, data) -> None  (one-time, e.g. set qvel)
     build["forcing"]   optional callable(model, data) -> None  (each substep)
 We deliberately do NOT set ``box_corners_local`` (that triggers the inverse-dynamics
-metadata path reserved for the box-on-plane scenarios in ``mujoco_gen``).
+metadata path reserved for the box-on-plane scenarios in ``oracle.factory``).
 """
 
 from __future__ import annotations
@@ -41,8 +42,10 @@ import mujoco
 
 from ._mjcf import free_dofadr as _free_dofadr, obj_id as _id, options as _common_options
 
-# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
-# (which imports this file at its end to register the builders) stays cycle-free.
+from oracle.registry import scenario
+
+# Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
+# leaf the builders below self-register into — all cycle-free.
 
 
 # Shared geometry constants (kept consistent so contact_point_local / surface lines up).
@@ -53,6 +56,7 @@ _BOX_HALF = 0.10        # box half-extent (m); bottom-center material point is [
 # Scenario builders
 # --------------------------------------------------------------------------------------
 
+@scenario("incline_slide")
 def _build_incline_slide() -> tuple[mujoco.MjModel, dict]:
     """A box rests on a TILTED plane (~20 deg) and slides downhill under gravity.
 
@@ -153,6 +157,7 @@ def _build_incline_slide() -> tuple[mujoco.MjModel, dict]:
     return model, build
 
 
+@scenario("skid_to_rest")
 def _build_skid_to_rest() -> tuple[mujoco.MjModel, dict]:
     """A box launched horizontally on a high-friction floor skids and decelerates to rest.
 
@@ -204,6 +209,7 @@ def _build_skid_to_rest() -> tuple[mujoco.MjModel, dict]:
     return model, build
 
 
+@scenario("spinning_top")
 def _build_spinning_top() -> tuple[mujoco.MjModel, dict]:
     """A top spun FAST about the vertical (= contact-normal) axis, staying in place.
 
@@ -295,6 +301,7 @@ def _build_spinning_top() -> tuple[mujoco.MjModel, dict]:
     return model, build
 
 
+@scenario("tumbling_box")
 def _build_tumbling_box() -> tuple[mujoco.MjModel, dict]:
     """A box thrown with linear + angular velocity tumbles across the floor then rests.
 
@@ -374,16 +381,3 @@ def _build_tumbling_box() -> tuple[mujoco.MjModel, dict]:
     return model, build
 
 
-# --------------------------------------------------------------------------------------
-# Registries (the required module-level dicts). SCENE_BUILDERS is intentionally empty:
-# every demo here is a single contact PAIR (a moving body vs one support).
-# --------------------------------------------------------------------------------------
-
-SCENARIO_BUILDERS: dict[str, callable] = {
-    "incline_slide": _build_incline_slide,
-    "skid_to_rest": _build_skid_to_rest,
-    "spinning_top": _build_spinning_top,
-    "tumbling_box": _build_tumbling_box,
-}
-
-SCENE_BUILDERS: dict[str, callable] = {}

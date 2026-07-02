@@ -47,7 +47,7 @@ from contact.mode_discovery import discover_modes, mode_feature_vector
 from contact.types import SLIDING, STATIC, ContactObservations
 
 # A single fixed seed so every scenario-backed test is reproducible (the seed only
-# drives the additive mocap noise in mujoco_gen.generate; the physics is deterministic).
+# drives the additive mocap noise in oracle.generate; the physics is deterministic).
 SEED = 12345
 HZ = 200.0
 
@@ -266,7 +266,8 @@ def test_discover_modes_single_frame_degenerate():
 
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen  # noqa: E402  (after the skip guard)
+from contact import geometry
+import oracle  # noqa: E402  (after the skip guard)
 
 
 def test_discover_modes_push_to_slide_finds_static_and_sliding():
@@ -282,7 +283,7 @@ def test_discover_modes_push_to_slide_finds_static_and_sliding():
     emission on channel magnitudes cleanly separates static vs. sliding, which differ in
     exactly one channel), so we assert only that both aligned modes are present.
     """
-    sc = mujoco_gen.generate("push_to_slide", seed=SEED, hz=HZ)
+    sc = oracle.generate("push_to_slide", seed=SEED, hz=HZ)
     obs = geometry.observe(sc.moving, sc.support, sc.surface, sc.contact_point_local,
                            geometry=getattr(sc, "geometry", None))
 

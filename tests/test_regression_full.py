@@ -3,7 +3,7 @@
 This sibling of ``test_integration.py`` guards two things at once on the *same*
 end-to-end pipeline of THEORY.md s.9 ---
 
-    mujoco_gen.generate  ->  geometry.observe  ->  ContactDetector().detect  ->  report.score
+    oracle.generate  ->  geometry.observe  ->  ContactDetector().detect  ->  report.score
 
 --- the detector is fed only the noisy "observable" channel and scored against the
 withheld simulator truth:
@@ -46,7 +46,8 @@ if str(_REPO_ROOT) not in sys.path:
 # detector itself does not depend on it).
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen
+from contact import geometry
+import oracle
 from oracle import report
 from contact.config import DetectorConfig, MaterialParams
 from contact.model import ContactDetector
@@ -69,7 +70,7 @@ def _run(name: str, config: DetectorConfig | None = None):
     twist, s.1/s.3) -> detect (the HMM estimator with the s.5-s.7 upgrades) -> score.
     The optional ``config`` lets a test switch on the material model (s.7).
     """
-    raw = mujoco_gen.generate(name, seed=SEED)
+    raw = oracle.generate(name, seed=SEED)
     obs = geometry.observe(
         raw.moving, raw.support, raw.surface, raw.contact_point_local,
         geometry=getattr(raw, "geometry", None),
