@@ -1,12 +1,12 @@
-"""Impact detection and characterization (THEORY.md s.6).
+"""Impact detection and characterization (THEORY.md §6).
 
-The sustained-contact modes of s.3-s.5 live on a *smooth* timescale: within a mode
+The sustained-contact modes of §3-§5 live on a *smooth* timescale: within a mode
 the relative twist follows a continuous flow. The make/break instants are different
 in kind. At touchdown the relative normal velocity is arrested almost
-discontinuously -- in the hybrid-system language of s.5 this is a **reset map**,
+discontinuously -- in the hybrid-system language of §5 this is a **reset map**,
 ``v+ = -e v-`` with ``e`` the coefficient of restitution. The clean object that
 holds both sustained force and these jumps at once is the contact force as a
-**measure** (s.6):
+**measure** (§6):
 
     dnu = lambda(t) dt  +  sum_i p_i delta(t - t_i)
 
@@ -14,7 +14,7 @@ holds both sustained force and these jumps at once is the contact force as a
 instants ``t_i``), with the velocity allowed to jump at those atoms. This module
 finds those atoms and characterizes each one.
 
-Three facts from s.6 dictate *how* we detect them, and they shape every choice below:
+Three facts from §6 dictate *how* we detect them, and they shape every choice below:
 
 * **Impacts are the precise event timers.** The arrest of the normal velocity pins
   the touchdown *time* far more sharply than the gradual onset of the "contact"
@@ -33,7 +33,7 @@ Three facts from s.6 dictate *how* we detect them, and they shape every choice b
 Detection method (matched filter)
 ---------------------------------
 A clean impact is a step in the relative normal velocity: the body closes at some
-speed (``v_normal < 0`` -- by the s.1 convention +ve is *separating*, so closing is
+speed (``v_normal < 0`` -- by the §1 convention +ve is *separating*, so closing is
 negative) and is abruptly arrested to ~0 (a stick/plastic landing) or reversed to
 ``-e v_before`` (a bounce). Differentiating a step gives a *spike*; equivalently, the
 matched filter for a step is a step-edge / derivative-of-step kernel. We therefore
@@ -65,7 +65,7 @@ Across an accepted impact we bracket the event by the template half-width and re
     v_after  = (representative v_normal in the W-window *after*  the arrest)
 
 using a robust median over each side (the velocity is piecewise-smooth on each side,
-so a median rejects the single transition sample and any spikes). Then, per s.6,
+so a median rejects the single transition sample and any spikes). Then, per §6,
 
     closing_speed  = |v_before|                     (the approach speed, always >= 0)
     restitution e  = max(0, -v_after / v_before)     (ratio of separating to closing)
@@ -75,25 +75,24 @@ sign, ``v_after > 0`` (separating), so ``-v_after / v_before = -(+)/(-) = +`` --
 positive ``e`` in ``(0, 1]``. A plastic/sticking landing has ``v_after ~ 0`` so
 ``e ~ 0``. We clip negatives to 0 (a body cannot leave faster *into* the surface),
 and report ``NaN`` when ``e`` is not measurable: when ``v_before`` is ~0 (no real
-approach) or either side is non-finite. Note we deliberately do NOT substitute a
-prior here (``ImpactParams.restitution_default`` is the HMM's prior for *unmeasured*
-events elsewhere); a detected impact reports what its own kinematics support, and
-``NaN`` honestly flags "bounce not resolved" rather than fabricating a number.
+approach) or either side is non-finite. We deliberately do NOT substitute a prior;
+a detected impact reports what its own kinematics support, and ``NaN`` honestly
+flags "bounce not resolved" rather than fabricating a number.
 
 Normal-impulse atom
 -------------------
 With the moving body's ``mass`` known, the atom magnitude is the momentum jump
-(s.6, ``integral lambda dt = m * delta v``):
+(§6, ``integral lambda dt = m * delta v``):
 
     normal_impulse = mass * (v_after - v_before)        (N*s)
 
 For a closing-then-arrested event ``v_after - v_before >= 0``, so the impulse is the
 (positive) normal momentum delivered by the surface. With ``mass=None`` the atom's
-magnitude is unobservable from kinematics alone (s.7), so we report ``NaN``.
+magnitude is unobservable from kinematics alone (§7), so we report ``NaN``.
 
 This module imports only ``contact.types``, ``contact.config``, ``contact.signals``
 and numpy, per the package dependency rules. It is a pure, offline (smoothing-window)
-estimator: like the s.6 latency note, using frames *after* the arrest is what makes
+estimator: like the §6 latency note, using frames *after* the arrest is what makes
 the bounce measurable at all.
 """
 
@@ -135,7 +134,7 @@ def _arrest_template(half_samples: int) -> np.ndarray:
     The kernel is ``-1`` over the ``half_samples`` taps *before* the centre and ``+1``
     over the ``half_samples`` taps *after* it (the centre tap is 0). Correlating
     ``v_normal`` with this kernel measures how much the normal velocity *rises* across
-    the window -- the signature of an arrest of approach (THEORY.md s.6). It is the
+    the window -- the signature of an arrest of approach (THEORY.md §6). It is the
     discrete matched filter for a velocity step: the step's "derivative" is the edge,
     and an edge detector is exactly this antisymmetric difference of two boxcars.
 
@@ -173,7 +172,7 @@ def _side_velocity(
 ) -> float:
     """Robust representative normal velocity on one side of an arrest.
 
-    ``v`` is piecewise-smooth on each side of the event (s.6), so a *median* over a
+    ``v`` is piecewise-smooth on each side of the event (§6), so a *median* over a
     window on that side cleanly rejects the transition samples and any isolated noise
     spike, giving a stable ``v_before`` / ``v_after``.
 
@@ -262,9 +261,9 @@ def detect_impacts(
     params: ImpactParams,
     mass: float | None = None,
 ) -> list[ContactImpulse]:
-    """Detect and characterize impact atoms in the force measure (THEORY.md s.6).
+    """Detect and characterize impact atoms in the force measure (THEORY.md §6).
 
-    Pipeline (each step traced to s.6):
+    Pipeline (each step traced to §6):
 
       1. **Light local smoothing.** Smooth ``obs.v_normal`` with a Gaussian of
          ``params.detect_smooth_time`` seconds. This tames differentiation/sensor
@@ -289,13 +288,13 @@ def detect_impacts(
     ----------
     obs:
         Per-frame support-relative observations; only ``obs.t`` and ``obs.v_normal``
-        are consumed (s.1: support-relative; s.6: the normal channel carries the
+        are consumed (§1: support-relative; §6: the normal channel carries the
         arrest).
     params:
         ``ImpactParams`` (template half-width, min closing speed, smoothing time).
     mass:
         Moving body's mass (kg) for the impulse atom; ``None`` => impulse unobservable
-        from kinematics (s.7), reported as ``NaN``.
+        from kinematics (§7), reported as ``NaN``.
 
     Returns
     -------
@@ -314,7 +313,7 @@ def detect_impacts(
         # Too few frames to define a velocity step and its bracketing windows.
         return []
 
-    # --- step 1: light, LOCAL smoothing (s.6: never wide -- it would erase the jump) ---
+    # --- step 1: light, LOCAL smoothing (§6: never wide -- it would erase the jump) ---
     v_s = gaussian_smooth(v, t, sigma_time=max(0.0, params.detect_smooth_time))
 
     # --- build the arrest template at the resolution of this clock ---
@@ -345,7 +344,7 @@ def detect_impacts(
     # The response of a genuine arrest is a clean triangular bump whose height scales
     # with the velocity step it matched. We turn that into discrete candidates with a
     # significance threshold (rejects flat/zero stretches and float wobble) followed by
-    # non-maximum suppression over the template half-width (one atom per arrest -- s.6).
+    # non-maximum suppression over the template half-width (one atom per arrest -- §6).
     #
     # The threshold is grounded in the physical closing-speed gate, NOT in the strongest
     # peak: a multi-bounce sequence has *decaying* peaks, so a "fraction of the max" floor
@@ -362,7 +361,7 @@ def detect_impacts(
     # Strong, well-separated positive maxima. find_peaks applies the significance floor
     # (height) and the greedy descending non-maximum suppression (distance) in one call;
     # distance=half+1 reproduces the old strict ``|i - j| > half`` separation bit-for-bit
-    # (one atom per arrest, s.6). The caller sorts the final impulses by time.
+    # (one atom per arrest, §6). The caller sorts the final impulses by time.
     candidates, _ = find_peaks(response, height=threshold, distance=half + 1)
 
     # --- step 4: gate by closing speed, then characterize each accepted impact ---
@@ -398,7 +397,7 @@ def detect_impacts(
         else:
             restitution = float("nan")
 
-        # Impulse atom = m * delta-v_normal (s.6). NaN if mass unknown (s.7).
+        # Impulse atom = m * delta-v_normal (§6). NaN if mass unknown (§7).
         if mass is not None and np.isfinite(v_after) and np.isfinite(v_before):
             normal_impulse = float(mass * (v_after - v_before))
         else:

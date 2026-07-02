@@ -19,7 +19,7 @@ contact_graph.png
 .DS_Store
 .claude/
 .cursor/
-contact_timeline.png
+rung0/contact_timeline.png
 
 # Tool caches
 .pytest_cache/

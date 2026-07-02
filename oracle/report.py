@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .types import (
+from contact.types import (
     FREE,
     DetectionResult,
     GraphDetectionResult,
@@ -219,7 +219,7 @@ def print_report(name: str, result: DetectionResult, truth: GroundTruth) -> None
     # --- impact atoms with their characterization (THEORY.md §6) ---
     # The impulses are the force-as-measure atoms: each is one velocity-step event with
     # its closing speed, measured restitution e (NaN if the bounce was not resolved),
-    # and momentum-jump impulse (NaN when the moving body's mass is unknown -- s.7, the
+    # and momentum-jump impulse (NaN when the moving body's mass is unknown -- §7, the
     # atom magnitude is unobservable from kinematics alone). They are complementary to
     # the make/break events above: events mark *that* a transition happened; impulses
     # mark *how hard* it hit.
@@ -267,26 +267,26 @@ def print_report(name: str, result: DetectionResult, truth: GroundTruth) -> None
 
 
 # --------------------------------------------------------------------------------------
-# Contact-implicit inverse dynamics reporting (THEORY.md s.8, the north star).
+# Contact-implicit inverse dynamics reporting (THEORY.md §8, the north star).
 #
 # The kinematic detector above asks "does the motion LOOK like contact?". The inverse-
-# dynamics layer (`contact.dynamics_id`) asks the dual question: what physically-valid
+# dynamics layer (`contact.inverse_dynamics`) asks the dual question: what physically-valid
 # contact forces EXPLAIN the observed motion under Newton-Euler with Signorini
-# complementarity (s.2) and the Coulomb cone (s.7)? Its `InverseDynamicsResult` carries
+# complementarity (§2) and the Coulomb cone (§7)? Its `InverseDynamicsResult` carries
 # recovered per-candidate forces, the implied active set, the summed normal force (which
 # at rest must equal m*g), and the per-frame wrench residual. This helper scores that
 # result against the simulator's withheld truth metadata (the same `raw.meta` the
 # scenario emits): m*g, the per-frame MuJoCo summed corner force, and the per-frame
-# Signorini active set. It is the s.8 analogue of `score`/`print_report`.
+# Signorini active set. It is the §8 analogue of `score`/`print_report`.
 # --------------------------------------------------------------------------------------
 
 
 def _settled_mask(truth_meta: dict, candidate_count: int) -> np.ndarray | None:
     """Per-frame mask of the SETTLED/REST frames (all candidates simultaneously active).
 
-    THEORY.md s.7/s.8: the recovered total normal force is only meant to equal the static
+    THEORY.md §7/§8: the recovered total normal force is only meant to equal the static
     weight ``m*g`` at *rest* — during a touchdown impact the contact force vastly exceeds
-    the weight (s.6, the force atom), and during partial-support phases only some corners
+    the weight (§6, the force atom), and during partial-support phases only some corners
     carry load. The honest "rest" set is therefore the frames where the simulator's truth
     active set is the FULL candidate set (every corner closed and loaded): those are the
     statically-supported frames where ``sum f_n == m*g`` is the physical expectation.
@@ -309,7 +309,7 @@ def _id_active_set_strip(active_set: list[list[int]], width: int = 60) -> str:
     Down-samples the per-frame active-candidate *count* into ``width`` cells; each cell
     shows the max count over the frames mapped into it as a single hex-ish digit
     ('.' for 0, '1'..'9', '+' for >=10). Lets the recovered active-set timeline be
-    eyeballed against the truth strip beneath it (THEORY.md s.8).
+    eyeballed against the truth strip beneath it (THEORY.md §8).
     """
     counts = np.array([len(a) for a in active_set], dtype=int)
     n = counts.size
@@ -335,9 +335,9 @@ def print_inverse_dynamics(
     truth_meta: dict,
     name: str | None = None,
 ) -> dict:
-    """Print and return the inverse-dynamics scorecard against the withheld truth (s.8).
+    """Print and return the inverse-dynamics scorecard against the withheld truth (§8).
 
-    THEORY.md s.8 (the north star) + s.9 (validation): the inverse-dynamics solver saw
+    THEORY.md §8 (the north star) + §9 (validation): the inverse-dynamics solver saw
     only the noisy observed pose; here we score what it recovered against the simulator's
     withheld physical truth carried in ``truth_meta`` (a scenario's ``raw.meta``). We
     report, all at the SETTLED/REST frames (where the truth active set is the full
@@ -345,21 +345,21 @@ def print_inverse_dynamics(
 
     * **recovered total normal force** vs the analytic ``m*g`` and vs the MuJoCo summed
       per-corner force (``meta['candidates']['normal_force']``). At rest all three should
-      agree; away from rest the MuJoCo sum spikes at impacts (s.6) and the recovered total
+      agree; away from rest the MuJoCo sum spikes at impacts (§6) and the recovered total
       tracks the *required* support, which is why we restrict to rest for the headline.
     * **active-set timeline** — recovered (count per frame) vs the Signorini truth
       (``meta['candidates']['active']``), as aligned ASCII strips and an IoU over the
       per-frame "any candidate active" masks.
     * **mean wrench residual** ``||G f - w||`` over all frames (how well the forces explain
-      the motion) — the s.8 consistency check.
+      the motion) — the §8 consistency check.
 
     The per-candidate load split is reported but flagged: in a statically-indeterminate
-    configuration it is the regularizer's minimum-norm choice, NOT a measurement (s.7).
+    configuration it is the regularizer's minimum-norm choice, NOT a measurement (§7).
 
     Parameters
     ----------
     result : InverseDynamicsResult
-        Output of :func:`contact.dynamics_id.contact_implicit_from_raw`.
+        Output of :func:`contact.inverse_dynamics.contact_implicit_from_raw`.
     truth_meta : dict
         The scenario's ``raw.meta``; must carry ``inertial`` (mass) and ``gravity``, and
         ideally ``candidates`` (``normal_force`` (K,T), ``active`` (K,T)) for the truth
@@ -375,7 +375,7 @@ def print_inverse_dynamics(
     """
     line = "=" * 72
     print(line)
-    hdr = "INVERSE DYNAMICS (THEORY.md s.8: contact-implicit Newton-Euler)"
+    hdr = "INVERSE DYNAMICS (THEORY.md §8: contact-implicit Newton-Euler)"
     print(f"{hdr}" + (f"  —  {name}" if name else ""))
     print(line)
 
@@ -416,7 +416,7 @@ def print_inverse_dynamics(
             muj_rest = float(np.median(muj_total[rest_idx])) if n_rest else float("nan")
 
     print(f"Settled/rest frames: {n_rest}/{T}  [{rest_src}]")
-    print("Recovered total normal force at rest (THEORY.md s.7: sum f_n == m*g):")
+    print("Recovered total normal force at rest (THEORY.md §7: sum f_n == m*g):")
     mg_s = "   n/a" if not np.isfinite(mg) else f"{mg:8.2f} N"
     print(f"  m*g (analytic)               : {mg_s}")
     print(f"  recovered  sum f_n  (median) : {rec_rest:8.2f} N")
@@ -426,7 +426,7 @@ def print_inverse_dynamics(
         err = 100.0 * (rec_rest - mg) / mg
         print(f"  recovered vs m*g             : {err:+6.1f} %")
 
-    # --- per-candidate load split at rest (flagged unobservable in general, s.7) ---
+    # --- per-candidate load split at rest (flagged unobservable in general, §7) ---
     nf_tk = np.asarray(result.contact_normal_force, dtype=float)  # (T, K)
     if n_rest and nf_tk.shape == (T, K):
         split = np.median(nf_tk[rest_idx], axis=0)  # (K,) per-candidate median at rest
@@ -440,10 +440,10 @@ def print_inverse_dynamics(
                 print(f"  truth per-corner    (median) : [{tsplit_s}] N")
         print(
             "  (NB: in an indeterminate config the split is the min-norm regularizer's "
-            "choice, not a measurement — THEORY.md s.7.)"
+            "choice, not a measurement — THEORY.md §7.)"
         )
 
-    # --- wrench residual (how well the forces explain the motion, s.8) ---
+    # --- wrench residual (how well the forces explain the motion, §8) ---
     mean_res = float(np.mean(residual)) if residual.size else float("nan")
     rest_res = float(np.mean(residual[rest_idx])) if n_rest else float("nan")
     print(f"Mean wrench residual ||G f - w||: {mean_res:.3e} N (all)  /  "
@@ -845,8 +845,8 @@ def plot_graph(
         print(f"plot_graph: matplotlib unavailable ({exc!r}); skipping plot.")
         return
 
-    from . import geometry  # local import: keep report importable without geometry at top
-    from .graph import _resolve_support  # the world-floor synthesizer (THEORY.md §1)
+    from contact import geometry  # local import: keep report importable without geometry at top
+    from contact.graph import _resolve_support  # the world-floor synthesizer (THEORY.md §1)
 
     edges = list(graph_result.edges)
     t = np.asarray(graph_result.t, dtype=float).ravel()

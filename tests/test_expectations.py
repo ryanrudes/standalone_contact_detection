@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from contact.verification import (  # noqa: E402
+from oracle.verification import (  # noqa: E402
     SCENARIO_EXPECT,
     SCENE_EXPECT,
     verify_scenario,

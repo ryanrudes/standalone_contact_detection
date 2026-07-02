@@ -16,18 +16,15 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from contact import mujoco_gen
+import oracle
 from contact.config import DetectorConfig
-from contact.visualize import animate_scene, animate_scenario
+from oracle.visualize import animate_scene, animate_scenario
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Side-by-side real-time contact-pipeline animation.")
-    ap.add_argument("name", help=f"scenario {mujoco_gen.SCENARIOS} or scene {mujoco_gen.SCENES}")
+    ap.add_argument("name", help=f"scenario {oracle.SCENARIOS} or scene {oracle.SCENES}")
     ap.add_argument("--out", default=None, help="output path (.mp4 or .gif); default media/<name>.mp4")
     ap.add_argument("--fps", type=int, default=50, help="playback fps (real-time; default 50)")
     ap.add_argument("--hz", type=float, default=100.0, help="simulation/record rate (default 100)")
@@ -48,9 +45,9 @@ def main() -> None:
                     help="render one zoomed slow-mo clip per contact event -> media/events/")
     args = ap.parse_args()
 
-    is_scene = args.name in mujoco_gen.SCENES
-    if not is_scene and args.name not in mujoco_gen.SCENARIOS:
-        ap.error(f"unknown name '{args.name}'. scenarios={mujoco_gen.SCENARIOS} scenes={mujoco_gen.SCENES}")
+    is_scene = args.name in oracle.SCENES
+    if not is_scene and args.name not in oracle.SCENARIOS:
+        ap.error(f"unknown name '{args.name}'. scenarios={oracle.SCENARIOS} scenes={oracle.SCENES}")
 
     config = DetectorConfig()
     if args.stiffness is not None:
@@ -58,7 +55,7 @@ def main() -> None:
     cfg = config if args.stiffness is not None else None
 
     if args.pairs:
-        from contact.visualize import animate_pairs
+        from oracle.visualize import animate_pairs
         paths = animate_pairs(args.name, seed=args.seed, hz=args.hz, config=cfg, use_force=args.force)
         print("Wrote per-pair contact videos" + (" (force channel on)" if args.force else "") + ":")
         for p in paths:
@@ -66,7 +63,7 @@ def main() -> None:
         return
 
     if args.events:
-        from contact.visualize import animate_event_clips
+        from oracle.visualize import animate_event_clips
         paths = animate_event_clips(args.name, outdir="media/events", seed=args.seed, hz=args.hz, config=cfg)
         print("Wrote event clips:")
         for p in paths:

@@ -1,10 +1,10 @@
-"""Complex multi-body SCENES with body-to-body collisions / chained impacts (THEORY.md s.8/s.9).
+"""Complex multi-body SCENES with body-to-body collisions / chained impacts (THEORY.md §8/§9).
 
 These scenes go beyond a single body resting on a static floor: their interesting
 edges are *body-to-body* contacts that flicker between FREE and IMPACT as momentum is
-exchanged through a chain (THEORY.md s.6: an impact is a force *atom*, a velocity
+exchanged through a chain (THEORY.md §6: an impact is a force *atom*, a velocity
 reset map ``v+ = -e*v-``, and these scenes are where those atoms propagate). The
-contact graph (THEORY.md s.8) here has edges that share moving bodies, and the
+contact graph (THEORY.md §8) here has edges that share moving bodies, and the
 true active set changes as collisions happen.
 
 Three scenes:
@@ -19,16 +19,17 @@ Three scenes:
   lifted and released to strike the line, momentum passing through to the far ball.
   The adjacent ball<->ball edges carry the propagating impacts.
 
-SELF-CONTAINMENT (THEORY.md s.9 / the builder contract): this module imports ONLY
+SELF-CONTAINMENT (THEORY.md §9 / the builder contract): this module imports ONLY
 ``mujoco``, ``numpy``, and ``contact.types``. It defines its own tiny ``<option>`` /
-name->id helpers so it never imports ``mujoco_gen`` (which imports THIS file at its
+name->id helpers from the ``oracle._mjcf`` leaf and registers via ``oracle.registry.scene``
+(a leaf that imports nothing, so there is no
 end -- importing it back would be a cycle). The generic simulate/label/score code in
-``mujoco_gen`` does everything else: we only build the model + the build dict.
+cycle). ``oracle.factory`` does everything else: we only build the model + the build dict.
 
 A scene builder may pin its own recording rate via ``build["record_hz"]``: the truth
 labeler samples each edge's active set only on RECORDED frames (every 1/hz s), so a brief
 body-to-body strike can be sub-frame at the default 100 Hz and register only as a single
-degenerate frame. ``mujoco_gen.generate_scene`` records at ``max(caller hz, record_hz)``,
+degenerate frame. ``oracle.factory.generate_scene`` records at ``max(caller hz, record_hz)``,
 so it never narrows a caller asking for an even higher rate.
 """
 
@@ -38,10 +39,13 @@ import numpy as np
 
 import mujoco
 
-from ._mjcf import body_dofadr as _dofadr, body_id as _bid, options as _options
+from ._mjcf import body_dofadr as _dofadr, options as _options
 
-# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
-# (which imports this file at its end to register the builders) stays cycle-free.
+from oracle.registry import scene
+from oracle.specs import EdgeSpec, SceneSpec
+
+# Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
+# leaf the builders below self-register into — all cycle-free.
 
 
 # Shared sizes (kept as named constants so surface points / tracked material points line up).
@@ -52,14 +56,15 @@ _BALL_R = 0.05          # sphere radius (m) for the two-balls scene
 # Scene 1: two balls collide
 # ======================================================================================
 
+@scene("two_balls_collide")
 def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
     """Two spheres on the floor; ball A is sent into ball B and exchanges momentum.
 
-    Physics (THEORY.md s.3 + s.6). Ball A is launched toward +x (a brisk forward shove on a
+    Physics (THEORY.md §3 + §6). Ball A is launched toward +x (a brisk forward shove on a
     HIGH-friction floor, so it spins up into rolling almost immediately) at ball B, which is
     resting one ball-diameter ahead. The collision is a clean central IMPACT on the
     ball<->ball edge: a near-discontinuous reset of the relative NORMAL velocity along the
-    line of centers (s.6). With equal masses and a head-on hit, momentum is exchanged -- A
+    line of centers (§6). With equal masses and a head-on hit, momentum is exchanged -- A
     slows sharply and B is shot forward, then B rolls away. Both floor edges are ROLLING when
     their ball is moving.
 
@@ -90,14 +95,14 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
        truth labels several IMPACT frames AND the HMM persistence prior can confirm the contact
        (a non-degenerate, non-zero-IoU edge).
 
-    Three candidate edges (THEORY.md s.8 contact graph):
+    Three candidate edges (THEORY.md §8 contact graph):
 
     * ``ballA_floor`` : ballA <-> floor (ROLLING while A moves).
     * ``ballB_floor`` : ballB <-> floor (ROLLING after the strike sends B off).
     * ``ballA_ballB`` : ballA <-> ballB (FREE -> transient IMPACT at the collision -> FREE).
 
     The MuJoCo truth labels are geom-based and independent of that observable surface
-    (THEORY.md s.9).
+    (THEORY.md §9).
     """
     gap = 0.35  # initial center-to-center gap along +x (m); A starts at the origin. Long
                 # enough that the detector sees a clear multi-frame FREE approach before the
@@ -136,9 +141,9 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
     # Phase-1 sphere-sphere geometry (DESIGN.md III.5) for the ball<->ball edge. Lazy import,
     # mirroring geometry.observe()'s own lazy FlatRegion import: keeps this module's
     # module-load-time dependencies just mujoco/numpy (the cycle-free contract documented in
-    # the module docstring and the mujoco_gen registry merge) since geometry_resolvers is only
+    # the module docstring and the registry) since geometry_resolvers is only
     # touched when a builder actually runs, long after every module has loaded.
-    from .geometry_resolvers import SphereSphere
+    from contact.geometry_resolvers import SphereSphere
 
     def launch(m: mujoco.MjModel, d: mujoco.MjData) -> None:
         # Brisk shove of ball A toward +x. The floor is LOW-friction so A arrives SLIDING with
@@ -149,46 +154,47 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
         # both balls drift the same way -- a muddier, less legible collision.)
         d.qvel[a_dof + 0] = 2.5     # linear x (m/s)
 
-    build = {
-        "bodies": ["ballA", "ballB"],
+    return SceneSpec(
+        model=model,
+        bodies=("ballA", "ballB"),
         # One-shot launch (reuses the scene 'launch' hook _simulate_scene runs after settle).
-        "launch": launch,
-        "duration": 1.6,
+        launch=launch,
+        duration=1.6,
         # Sample faster than the default 100 Hz so the brief ball-ball collision spans several
         # recorded frames (its sub-frame normal-velocity peak would otherwise fall between
         # frames, leaving the ball-ball edge a single, degenerate SLIDING frame). See docstring.
-        "record_hz": 300.0,
-        "edges": [
-            {
-                "edge_id": "ballA_floor",
-                "moving_body": "ballA",
-                "support_body": "world",
-                "moving_geoms": ["ballAg"],
-                "support_geoms": ["floor"],
+        record_hz=300.0,
+        edges=(
+            EdgeSpec(
+                edge_id="ballA_floor",
+                moving_body="ballA",
+                support_body="world",
+                moving_geoms=("ballAg",),
+                support_geoms=("floor",),
                 # Observation-side plane raised one radius so the tracked CENTER reads gap ~0
-                # at floor contact (the sphere convention from mujoco_gen's rolling_ball).
-                "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-                "contact_point_local": np.array([0.0, 0.0, 0.0]),
-                "shape": "sphere",
-            },
-            {
-                "edge_id": "ballB_floor",
-                "moving_body": "ballB",
-                "support_body": "world",
-                "moving_geoms": ["ballBg"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, _BALL_R]),
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-                "contact_point_local": np.array([0.0, 0.0, 0.0]),
-                "shape": "sphere",
-            },
-            {
-                "edge_id": "ballA_ballB",
-                "moving_body": "ballA",
-                "support_body": "ballB",
-                "moving_geoms": ["ballAg"],
-                "support_geoms": ["ballBg"],
+                # at floor contact (the sphere convention from scenarios_core's rolling_ball).
+                surface_point_local=np.array([0.0, 0.0, _BALL_R]),
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
+                contact_point_local=np.array([0.0, 0.0, 0.0]),
+                shape="sphere",
+            ),
+            EdgeSpec(
+                edge_id="ballB_floor",
+                moving_body="ballB",
+                support_body="world",
+                moving_geoms=("ballBg",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, _BALL_R]),
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
+                contact_point_local=np.array([0.0, 0.0, 0.0]),
+                shape="sphere",
+            ),
+            EdgeSpec(
+                edge_id="ballA_ballB",
+                moving_body="ballA",
+                support_body="ballB",
+                moving_geoms=("ballAg",),
+                support_geoms=("ballBg",),
                 # Sphere-sphere observable surface (the sphere convention, generalized to a
                 # MOVING support). We track A's CENTER (contact_point_local = 0) and put a
                 # vertical plane on ballB at TWO radii inboard of B's center with an outward
@@ -199,27 +205,26 @@ def _build_two_balls_collide() -> tuple[mujoco.MjModel, dict]:
                 # line of centers -- so the observed gap never reached 0 at the strike and the
                 # detector could never confirm the contact. Tracking the (rotation-invariant)
                 # center, as the floor edges do, keeps the gap honest. (Truth is geom-based.)
-                "surface_point_local": np.array([-2.0 * _BALL_R, 0.0, 0.0]),
-                "surface_normal_local": np.array([-1.0, 0.0, 0.0]),
-                "contact_point_local": np.array([0.0, 0.0, 0.0]),
-                "shape": "sphere",
+                surface_point_local=np.array([-2.0 * _BALL_R, 0.0, 0.0]),
+                surface_normal_local=np.array([-1.0, 0.0, 0.0]),
+                contact_point_local=np.array([0.0, 0.0, 0.0]),
+                shape="sphere",
                 # Phase-1 (DESIGN.md III.5): resolve this ball<->ball edge with SphereSphere so
                 # the contact normal is the line-of-centres (c_A - c_B)/||.||, NOT a quat-carried
                 # body-fixed vector. The old plane-on-B surface above (kept for the FlatRegion
                 # fallback / broad-phase) whirls with a spinning A and manufactured 7 phantom
                 # impacts; the position-derived normal collapses them to the single real strike.
-                "geometry": SphereSphere(_BALL_R, _BALL_R),
-            },
-        ],
-        "meta": {
+                geometry=SphereSphere(_BALL_R, _BALL_R),
+            ),
+        ),
+        meta={
             "story": (
                 "Ball A is sent into a resting ball B; equal-mass central impact exchanges "
-                "momentum (THEORY.md s.6). Floor edges ROLLING; ball-ball edge a clean "
+                "momentum (THEORY.md §6). Floor edges ROLLING; ball-ball edge a clean "
                 "transient IMPACT."
             ),
         },
-    }
-    return model, build
+    )
 
 
 # ======================================================================================
@@ -231,10 +236,11 @@ _DOM_GAP = 0.085                            # center-to-center spacing along +x 
 _N_DOM = 4                                  # number of dominoes (4 => the cascade reliably completes)
 
 
+@scene("dominoes")
 def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     """A row of upright thin boxes; the first is shoved and topples into the next.
 
-    Physics (THEORY.md s.6, chained impacts). Each domino is a tall thin box standing on
+    Physics (THEORY.md §6, chained impacts). Each domino is a tall thin box standing on
     the floor. The first is given an initial +x angular velocity (a shove about its
     bottom edge); it topples, its top strikes domino 2, knocking it past its balance
     point, and the cascade propagates. The spacing ``_DOM_GAP`` is set smaller than a
@@ -242,7 +248,7 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     cascade condition), and 4 dominoes keep the chain short enough to complete cleanly
     within the window.
 
-    Edges (THEORY.md s.8): one ``domI_floor`` edge per domino (its bottom-face contact
+    Edges (THEORY.md §8): one ``domI_floor`` edge per domino (its bottom-face contact
     with the ground). While standing it is STATIC; as it topples its bottom edge pivots
     and the toppling/landing produces IMPACT transients. We also expose the adjacent
     ``domI_domJ`` strike edges (box-on-box) so the propagating collision shows up as a
@@ -250,7 +256,7 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
 
     The tracked material point for each floor edge is the domino's bottom-face center;
     its observable gap stays ~0 while standing and lifts as the domino rotates off its
-    base (the s.1 support-relative gap). The truth labels are geom-based (THEORY.md s.9).
+    base (the §1 support-relative gap). The truth labels are geom-based (THEORY.md §9).
     """
     hx, hy, hz = _DOM_HALF
     bodies = [f"dom{i}" for i in range(_N_DOM)]
@@ -292,17 +298,17 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     edges = []
     for i in range(_N_DOM):
         edges.append(
-            {
-                "edge_id": f"dom{i}_floor",
-                "moving_body": f"dom{i}",
-                "support_body": "world",
-                "moving_geoms": [f"dom{i}g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),
-                "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-                "contact_point_local": np.array([+hx, 0.0, -hz]),
-                "shape": "box",
-            }
+            EdgeSpec(
+                edge_id=f"dom{i}_floor",
+                moving_body=f"dom{i}",
+                support_body="world",
+                moving_geoms=(f"dom{i}g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),
+                surface_normal_local=np.array([0.0, 0.0, 1.0]),
+                contact_point_local=np.array([+hx, 0.0, -hz]),
+                shape="box",
+            )
         )
     # Adjacent domino<->domino strike edges (box-on-box). Surface = the +x face of the
     # lower-index domino in ITS local frame, normal +x; tracked point on the upper-index
@@ -313,35 +319,35 @@ def _build_dominoes() -> tuple[mujoco.MjModel, dict]:
     # perpetually-empty lane. The earlier pairs end in clean parallel-face leans.
     for i in range(_N_DOM - 2):
         edges.append(
-            {
-                "edge_id": f"dom{i}_dom{i + 1}",
-                "moving_body": f"dom{i + 1}",
-                "support_body": f"dom{i}",
-                "moving_geoms": [f"dom{i + 1}g"],
-                "support_geoms": [f"dom{i}g"],
-                "surface_point_local": np.array([+hx, 0.0, 0.0]),
-                "surface_normal_local": np.array([+1.0, 0.0, 0.0]),
-                "contact_point_local": np.array([-hx, 0.0, 0.0]),
-                "shape": "box",
-            }
+            EdgeSpec(
+                edge_id=f"dom{i}_dom{i + 1}",
+                moving_body=f"dom{i + 1}",
+                support_body=f"dom{i}",
+                moving_geoms=(f"dom{i + 1}g",),
+                support_geoms=(f"dom{i}g",),
+                surface_point_local=np.array([+hx, 0.0, 0.0]),
+                surface_normal_local=np.array([+1.0, 0.0, 0.0]),
+                contact_point_local=np.array([-hx, 0.0, 0.0]),
+                shape="box",
+            )
         )
 
-    build = {
-        "bodies": bodies,
+    return SceneSpec(
+        model=model,
+        bodies=tuple(bodies),
         # Brief settle so the dominoes seat on the floor (gravity squashes the contact to
         # equilibrium) before the shove, so the recorded window opens from clean STATIC.
-        "settle": 0.15,
-        "launch": launch,
-        "duration": 1.6,
-        "edges": edges,
-        "meta": {
+        settle=0.15,
+        launch=launch,
+        duration=1.6,
+        edges=tuple(edges),
+        meta={
             "story": (
-                "%d-domino cascade (THEORY.md s.6): the first is shoved and topples into "
+                "%d-domino cascade (THEORY.md §6): the first is shoved and topples into "
                 "the next, a chain of impacts/topples propagating along the row." % _N_DOM
             ),
         },
-    }
-    return model, build
+    )
 
 
 # ======================================================================================
@@ -358,8 +364,9 @@ _NC_BALL_Z = 0.28       # rest height of the hanging balls (m) -- suspended, wel
 _NC_LIFT = 0.55         # angle (rad ~31 deg) the end ball is lifted to, then RELEASED FROM REST
 
 
+@scene("newtons_cradle")
 def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
-    """A real SUSPENDED Newton's cradle (THEORY.md s.6: impacts propagating through a line).
+    """A real SUSPENDED Newton's cradle (THEORY.md §6: impacts propagating through a line).
 
     Physics. N equal balls hang from a fixed top bar on hinge pendulums, in a line with a
     hair of clearance between neighbours. The end ball is LIFTED to a modest angle and
@@ -380,10 +387,10 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
       (``solref="0.012 0.15"``) transfers momentum cleanly, and ``record_hz = 400`` samples
       each brief strike across several frames.
 
-    Edges (THEORY.md s.8): the adjacent ball<->ball contacts ``b{i}_b{i+1}``; each tracks the
+    Edges (THEORY.md §8): the adjacent ball<->ball contacts ``b{i}_b{i+1}``; each tracks the
     moving ball's (rotation-invariant) CENTER against a plane 2R inboard of the support ball's
     centre (the balls are near-vertical at each central strike, so that pole aligns). Truth
-    labels are geom-based (THEORY.md s.9).
+    labels are geom-based (THEORY.md §9).
     """
     R = _NC_R
     spacing = 2.0 * R + _NC_GAP
@@ -435,7 +442,7 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
     # for the same reason as in _build_two_balls_collide: keep this module's module-load-time
     # deps just mujoco/numpy (the documented cycle-free contract); geometry_resolvers is only
     # imported when a builder runs, long after all modules have loaded.
-    from .geometry_resolvers import SphereSphere
+    from contact.geometry_resolvers import SphereSphere
 
     # Adjacent ball<->ball edges: the impulse propagates along these. Each edge resolves with
     # SphereSphere so the contact normal is the line-of-centres (c_{i+1} - c_i)/||.||, NOT a
@@ -445,52 +452,39 @@ def _build_newtons_cradle() -> tuple[mujoco.MjModel, dict]:
     edges = []
     for i in range(_NC_N - 1):
         edges.append(
-            {
-                "edge_id": f"b{i}_b{i + 1}",
-                "moving_body": f"b{i + 1}",
-                "support_body": f"b{i}",
-                "moving_geoms": [f"b{i + 1}g"],
-                "support_geoms": [f"b{i}g"],
-                "surface_point_local": np.array([2.0 * R, 0.0, 0.0]),
-                "surface_normal_local": np.array([1.0, 0.0, 0.0]),
-                "contact_point_local": np.zeros(3),
-                "shape": "sphere",
-                "geometry": SphereSphere(_NC_R, _NC_R),
-            }
+            EdgeSpec(
+                edge_id=f"b{i}_b{i + 1}",
+                moving_body=f"b{i + 1}",
+                support_body=f"b{i}",
+                moving_geoms=(f"b{i + 1}g",),
+                support_geoms=(f"b{i}g",),
+                surface_point_local=np.array([2.0 * R, 0.0, 0.0]),
+                surface_normal_local=np.array([1.0, 0.0, 0.0]),
+                contact_point_local=np.zeros(3),
+                shape="sphere",
+                geometry=SphereSphere(_NC_R, _NC_R),
+            )
         )
 
-    build = {
-        "bodies": [f"b{i}" for i in range(_NC_N)],
+    return SceneSpec(
+        model=model,
+        bodies=tuple(f"b{i}" for i in range(_NC_N)),
         # Brief settle so the hanging line comes fully to rest before the end ball is lifted.
-        "settle": 0.15,
-        "launch": launch,
-        "duration": 2.5,
+        settle=0.15,
+        launch=launch,
+        duration=2.5,
         # Sample fast: each ball-ball strike is brief; its sub-frame normal-velocity peak would
         # otherwise fall between recorded frames, leaving the edge a degenerate single frame.
-        "record_hz": 400.0,
-        "edges": edges,
-        "meta": {
+        record_hz=400.0,
+        edges=tuple(edges),
+        meta={
             "story": (
-                "%d-ball Newton's cradle (THEORY.md s.6): the end ball is lifted and released "
+                "%d-ball Newton's cradle (THEORY.md §6): the end ball is lifted and released "
                 "FROM REST; it swings down, strikes the suspended line, and the impulse "
                 "propagates ball-to-ball so the FAR ball swings out while the middle stays put."
                 % _NC_N
             ),
         },
-    }
-    return model, build
+    )
 
 
-# --------------------------------------------------------------------------------------
-# Registries (the builder contract: module-level dicts mapping name -> builder).
-# --------------------------------------------------------------------------------------
-
-#: No single-pair scenarios in this module -- everything here is a multi-body SCENE.
-SCENARIO_BUILDERS: dict[str, callable] = {}
-
-#: Multi-body scenes with body-to-body collisions / chained impacts (THEORY.md s.8).
-SCENE_BUILDERS: dict[str, callable] = {
-    "two_balls_collide": _build_two_balls_collide,
-    "dominoes": _build_dominoes,
-    "newtons_cradle": _build_newtons_cradle,
-}

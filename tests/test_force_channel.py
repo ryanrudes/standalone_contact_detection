@@ -28,9 +28,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 pytest.importorskip("mujoco")  # the virtual-sensor test runs the MuJoCo harness; skip if absent
 
-import contact.mujoco_gen as mujoco_gen  # noqa: E402
+import oracle  # noqa: E402
 from contact.config import DetectorConfig, EmissionParams, ForceEmissionParams  # noqa: E402
-from contact.dynamics_id import infer_normal_force  # noqa: E402
+from contact.inverse_dynamics import infer_normal_force  # noqa: E402
 from contact.emissions import (  # noqa: E402
     _force_log_density,
     _log_half_normal,
@@ -149,7 +149,7 @@ class TestVirtualForceSensor:
         a force stream that tracks the simulator's true contact force on the in-contact frames,
         with no physical sensor."""
         cfg = DetectorConfig()
-        raw = mujoco_gen.generate("drop_rest")
+        raw = oracle.generate("drop_rest")
         inferred = infer_normal_force(raw, cfg)
         assert inferred is not None, (
             "drop_rest (single rigid body + inertials/candidates) must support inferred force"
@@ -168,6 +168,6 @@ class TestVirtualForceSensor:
         A scenario lacking the inertial/candidate metadata the solver needs must degrade to None so
         callers fall back to the kinematics-only estimate rather than trusting a bad inference."""
         cfg = DetectorConfig()
-        assert infer_normal_force(mujoco_gen.generate("rolling_ball"), cfg) is None, (
+        assert infer_normal_force(oracle.generate("rolling_ball"), cfg) is None, (
             "a scenario without the required inertial/candidate metadata must return None gracefully"
         )

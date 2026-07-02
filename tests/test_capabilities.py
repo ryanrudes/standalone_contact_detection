@@ -1,7 +1,7 @@
 """Permanent validation of the capability registry + value-of-information (DESIGN.md Phase 5).
 
 These promote the session's capability checks into self-contained tests. Each builds its scene
-*fresh* and asserts the registry's contract (DESIGN.md PART I sections 4-8):
+*fresh* and asserts the registry's contract (DESIGN.md PART I §4-§8):
 
 * an empty :class:`~contact.capabilities.Capabilities` reproduces the validated kinematic/flat
   floor bit-for-bit (the no-op-when-absent guarantee);
@@ -25,12 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 pytest.importorskip("mujoco")  # the demos come from the MuJoCo harness; skip cleanly if absent
 
-import contact.mujoco_gen as mujoco_gen  # noqa: E402
+import oracle  # noqa: E402
 from contact import observe  # noqa: E402
 from contact.capabilities import Capabilities, detect_pair, value_of_information  # noqa: E402
 from contact.config import DetectorConfig  # noqa: E402
 from contact.graph import _resolve_support  # noqa: E402
-from contact.model import ContactDetector  # noqa: E402
+from contact.detector import ContactDetector  # noqa: E402
 from contact.types import IMPACT  # noqa: E402
 
 # --------------------------------------------------------------------------------------
@@ -42,7 +42,7 @@ CFG = DetectorConfig()
 
 def _scene_pair(scene_name: str, edge_id: str):
     """(moving, support, surface, contact_point_local, truth_force) for one edge of a fresh scene."""
-    scene = mujoco_gen.generate_scene(scene_name)
+    scene = oracle.generate_scene(scene_name)
     edge = next(e for e in scene.edges if e.edge_id == edge_id)
     moving = scene.bodies[edge.moving_body]
     support = _resolve_support(scene, edge.support_body, moving)
@@ -66,7 +66,7 @@ class TestCapabilitiesFloor:
 
         An empty declaration selects exactly the validated floor (FlatRegion geometry, no force
         factor), so its MAP path and contact posterior must match the bare pipeline bit-for-bit."""
-        raw = mujoco_gen.generate("drop_rest")
+        raw = oracle.generate("drop_rest")
         via_caps = detect_pair(
             raw.moving, raw.support, raw.surface, raw.contact_point_local, Capabilities(), CFG
         )

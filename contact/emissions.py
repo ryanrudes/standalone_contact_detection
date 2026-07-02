@@ -1,7 +1,7 @@
-"""Per-state emission log-likelihoods (THEORY.md sections 3 & 4).
+"""Per-state emission log-likelihoods (THEORY.md §3 & §4).
 
 For every candidate contact state we write down a *generative* model: a proper
-probability density over the observed (gap, twist) tuple. THEORY.md section 4
+probability density over the observed (gap, twist) tuple. THEORY.md §4
 makes the central modeling commitments that govern this file:
 
   * The decision between states is a **likelihood ratio** -- "how much better does
@@ -15,17 +15,17 @@ makes the central modeling commitments that govern this file:
   * **FREE is diffuse** -- the body could be at any height moving any which way, so
     every channel gets a broad prior (a uniform clearance and wide Gaussians).
 
-  * **Contact states are sharp peaks on a twist subspace** (THEORY.md section 3).
+  * **Contact states are sharp peaks on a twist subspace** (THEORY.md §3).
     Each mode pins the gap near the resting bias and concentrates the relative twist
     on the subspace that mode allows, leaving the off-subspace channels broad. The
     modes are distinguished by *which* channels are pinned and -- for rolling -- by a
     *cross-channel correlation* (``|v_tangent| ~= r*|omega_tangent|``), which no
     per-channel-independent model could represent.
 
-  * The **gap channel is asymmetric and bounded** (THEORY.md sections 2 & 4): tight
+  * The **gap channel is asymmetric and bounded** (THEORY.md §2 & §4): tight
     tolerance on the ``g > 0`` (separation) side, looser tolerance on the ``g < 0``
     (penetration) side because sensor / plane-fit error squishes the point below the
-    plane, and -- because section 2 forbids true rigid penetration -- the likelihood
+    plane, and -- because §2 forbids true rigid penetration -- the likelihood
     must *decay* for large negative gap rather than reward it. A two-piece (split)
     Gaussian about the resting bias delivers exactly this: gross penetration sits far
     out in a Gaussian tail and earns essentially zero contact likelihood.
@@ -90,7 +90,7 @@ def _log_normal_1d(x: np.ndarray, mean: float, sigma: float) -> np.ndarray:
     A proper 1-D Gaussian log-density:
         -log(sigma) - 0.5*log(2*pi) - 0.5*((x-mean)/sigma)^2
     The ``-log(sigma) - 0.5*log(2*pi)`` term is the normalization we must keep so
-    likelihood ratios across states stay calibrated (THEORY.md section 4).
+    likelihood ratios across states stay calibrated (THEORY.md §4).
     """
     z = (np.asarray(x, dtype=float) - mean) / sigma
     return -np.log(sigma) - _LOG_SQRT_2PI - 0.5 * z * z
@@ -100,7 +100,7 @@ def _log_normal_2d_iso(x: np.ndarray, sigma: float) -> np.ndarray:
     """log of an isotropic zero-mean 2-D Gaussian N(x; 0, sigma^2 I) on R^2.
 
     For a 2-vector channel (tangential velocity / tangential angular velocity) the
-    emission is a distribution *on the vector as a whole* (THEORY.md section 4), here
+    emission is a distribution *on the vector as a whole* (THEORY.md §4), here
     the isotropic case. Constant is two copies of the 1-D constant:
         -2*log(sigma) - log(2*pi) - 0.5*|x|^2/sigma^2
     ``x`` has shape (T, 2); returns (T,).
@@ -113,7 +113,7 @@ def _log_normal_2d_iso(x: np.ndarray, sigma: float) -> np.ndarray:
 def _log_uniform(width: float) -> float:
     """log density of a uniform distribution of total width ``width`` (a constant).
 
-    The diffuse FREE clearance prior (THEORY.md section 4): log density = -log(width)
+    The diffuse FREE clearance prior (THEORY.md §4): log density = -log(width)
     everywhere on the support. We treat the support as wide enough that observed gaps
     fall inside it, so every frame gets the same constant; this is intentional -- a
     flat prior contributes a constant offset that the likelihood *ratio* against the
@@ -127,12 +127,12 @@ def _log_split_normal_gap(
 ) -> np.ndarray:
     """log of the two-piece (split) Gaussian gap density about ``mean``.
 
-    THEORY.md sections 2 & 4: the contact gap density is asymmetric -- standard
+    THEORY.md §2 & §4: the contact gap density is asymmetric -- standard
     deviation ``sigma_hi`` for ``gap >= mean`` (a real *separation* above the resting
     contact quickly means "free", so this side is *tight*) and ``sigma_lo`` for
     ``gap < mean`` (penetration is tolerated more: sensor / plane-fit squish). Both
     sides decay as Gaussians, so gross penetration lands deep in the lower tail and
-    earns essentially zero contact likelihood -- the bounded behaviour section 2
+    earns essentially zero contact likelihood -- the bounded behaviour §2
     demands, achieved without an ad-hoc clip.
 
     A split normal that is continuous at the mean has a single normalization constant
@@ -176,7 +176,7 @@ def _log_offset_magnitude_1d(x: np.ndarray, speed: float, sigma: float) -> np.nd
 
     Used by the modes whose signature is "a particular channel is *moving*, not
     resting" -- sliding's tangential speed, pivoting's spin rate, impact's normal
-    closing speed (THEORY.md section 3). We need a proper density on the signed
+    closing speed (THEORY.md §3). We need a proper density on the signed
     observation ``x in R`` that is peaked away from 0, symmetric (sign of the channel
     is not informative), and integrates to 1. We use a **symmetric two-component
     Gaussian mixture** with equal weight on +/-``speed``:
@@ -242,7 +242,7 @@ def _log_rolling_residual_normalizer(
     function of *both* tangential vectors, multiplying it onto the priors removes mass
     from the joint, so the product does NOT integrate to 1 (it integrates to ``Z_res``,
     ~0.66 at the defaults). Every other state's column integrates to 1, so this missing
-    normalizer would NOT cancel in the cross-state likelihood ratio of THEORY.md s.4 and
+    normalizer would NOT cancel in the cross-state likelihood ratio of THEORY.md §4 and
     would hand ROLLING a parameter-dependent, unearned offset on every frame. We restore
     properness by subtracting ``log(Z_res)`` (this helper) from the column.
 
@@ -373,11 +373,11 @@ def _force_log_density(
 
 
 # --------------------------------------------------------------------------------------
-# The channel densities as first-class objects (THEORY.md sections 3 & 4).
+# The channel densities as first-class objects (THEORY.md §3 & §4).
 #
 # Each contact mode is a PRODUCT of independent per-channel densities (a SUM of these
 # log-densities); the modes differ only in WHICH density sits on each channel. Naming each
-# density as a small immutable object lets a mode read as its generative signature (s.3), and
+# density as a small immutable object lets a mode read as its generative signature (§3), and
 # keeps every normalization constant a property that can be tested in isolation (each .logpdf is
 # a proper density -- see tests/test_density.py). Every .logpdf is a thin wrapper over the
 # primitives above, so a composed mode is byte-identical to the inline accumulation it replaces.
@@ -407,7 +407,7 @@ class IsoNormal2D:
 
 @dataclass(frozen=True)
 class SplitNormalGap:
-    """Two-piece Gaussian gap density: sigma_hi above the mean, sigma_lo below (s.2). Equal sigmas => N(mean, sigma^2)."""
+    """Two-piece Gaussian gap density: sigma_hi above the mean, sigma_lo below (§2). Equal sigmas => N(mean, sigma^2)."""
 
     mean: float
     sigma_hi: float
@@ -488,23 +488,23 @@ def _compose(terms: tuple) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------------------
-# The contact modes (THEORY.md section 3) as generative models.
+# The contact modes (THEORY.md §3) as generative models.
 # --------------------------------------------------------------------------------------
 #
 # Each mode is a proper probability density over the WHOLE observation (gap, v_normal in R,
 # v_tangent in R^2, omega_normal in R, omega_tangent in R^2) so the columns are comparable
-# and their differences are the calibrated likelihood ratios of THEORY.md s.4. A mode's
-# *signature* is the set of twist channels it PINS to ~0 vs. EXCITES (s.3); off-subspace
+# and their differences are the calibrated likelihood ratios of THEORY.md §4. A mode's
+# *signature* is the set of twist channels it PINS to ~0 vs. EXCITES (§3); off-subspace
 # channels get a broad FREE-scale density so the mode neither rewards nor penalizes motion
 # it does not constrain. Each subclass writes that signature as ``kinematic_log_density``;
 # the base adds the shared, optional, gated measured-force channel (DESIGN.md II.A) once.
 
 
 class ContactMode:
-    """A single latent contact mode, written as a generative model (THEORY.md s.3/s.4).
+    """A single latent contact mode, written as a generative model (THEORY.md §3/§4).
 
     A subclass IS its KINEMATIC density over the (gap, twist) observation -- which channels the
-    mode pins and which it excites, i.e. its physical signature (s.3). The cross-cutting, optional
+    mode pins and which it excites, i.e. its physical signature (§3). The cross-cutting, optional
     MEASURED-FORCE channel (DESIGN.md II.A) is no longer folded in here; it is a separate
     ``ForceFactor`` in the emission sum (see ``log_emissions``), so a mode stays purely kinematic.
     ``name`` is the ``contact.types`` mode id -- both the registry key and the force-density selector.
@@ -515,12 +515,12 @@ class ContactMode:
     def kinematic_log_density(
         self, obs: ContactObservations, params: EmissionParams, gap_bias: float
     ) -> np.ndarray:
-        """``(T,)`` log p(gap, twist | mode) -- the mode's kinematic signature (s.3)."""
+        """``(T,)`` log p(gap, twist | mode) -- the mode's kinematic signature (§3)."""
         raise NotImplementedError
 
 
 class Free(ContactMode):
-    """FREE: nothing is pinned -- a diffuse prior on every channel (THEORY.md s.4).
+    """FREE: nothing is pinned -- a diffuse prior on every channel (THEORY.md §4).
 
     The body could be at any clearance moving any way, so every channel is broad:
       gap           ~ Uniform over ``gap_free_range``
@@ -544,7 +544,7 @@ class Free(ContactMode):
 
 
 class Static(ContactMode):
-    """STATIC / sticking: the whole twist is pinned to ~0 -- a contact at rest (s.3).
+    """STATIC / sticking: the whole twist is pinned to ~0 -- a contact at rest (§3).
 
     Channels:
       gap           ~ split-normal about gap_bias (sigma_gap above / sigma_pen below)
@@ -567,7 +567,7 @@ class Static(ContactMode):
 
 
 class Sliding(ContactMode):
-    """SLIDING: tangential-linear motion only (THEORY.md section 3).
+    """SLIDING: tangential-linear motion only (THEORY.md §3).
 
     Channels:
       gap           ~ split-normal about gap_bias
@@ -596,7 +596,7 @@ class Sliding(ContactMode):
 
 
 class Pivoting(ContactMode):
-    """PIVOTING / twisting: normal-angular motion only (THEORY.md section 3).
+    """PIVOTING / twisting: normal-angular motion only (THEORY.md §3).
 
     Channels:
       gap           ~ split-normal about gap_bias
@@ -620,11 +620,11 @@ class Pivoting(ContactMode):
 
 
 class Rolling(ContactMode):
-    """ROLLING: tangential-linear COUPLED to tangential-angular (THEORY.md section 3).
+    """ROLLING: tangential-linear COUPLED to tangential-angular (THEORY.md §3).
 
     Rolling is *defined* by the cross-channel constraint ``v = omega x r`` -- the tangential
     speed and the tangential spin are locked together, so a per-channel-independent model
-    literally cannot represent it (s.3/s.4). We encode the coupling as a Gaussian on the
+    literally cannot represent it (§3/§4). We encode the coupling as a Gaussian on the
     rolling-constraint RESIDUAL
 
         r_res = |v_tangent| - roll_radius * |omega_tangent|   ~  N(0, roll_sigma^2)
@@ -642,7 +642,7 @@ class Rolling(ContactMode):
     Properness: the residual is a 1-D Gaussian in a scalar that depends on BOTH tangential
     vectors, so multiplying it onto the broad 2-D priors removes mass -- the joint over
     ``(v_t, omega_t)`` integrates to ``Z_res`` (~0.66 at defaults), not 1. Since every other
-    column integrates to 1, that offset would not cancel in the s.4 likelihood ratio, so we
+    column integrates to 1, that offset would not cancel in the §4 likelihood ratio, so we
     subtract ``log(Z_res)`` (computed once and cached by ``_log_rolling_residual_normalizer``)
     -- making this a proper coupling-aware joint density, not a product of independent
     marginals, and so comparable to the other modes' columns.
@@ -673,7 +673,7 @@ class Rolling(ContactMode):
 
 
 class Impact(ContactMode):
-    """IMPACT: a short-lived transient at touchdown/break (THEORY.md section 6).
+    """IMPACT: a short-lived transient at touchdown/break (THEORY.md §6).
 
     The signature is a large (closing) normal velocity at a gap near the bias but WIDER than
     sustained contact -- the body crosses g~0 with momentum, so the instantaneous gap is less
@@ -713,7 +713,7 @@ MODES: dict[str, ContactMode] = {
 
 
 # --------------------------------------------------------------------------------------
-# Emission factors: the (T, S) grid as a SUM of independent log-contributions (THEORY.md s.4)
+# Emission factors: the (T, S) grid as a SUM of independent log-contributions (THEORY.md §4)
 # --------------------------------------------------------------------------------------
 #
 # The emission log-likelihood is a sum of factors on the grid: the always-present kinematic mode
@@ -736,7 +736,7 @@ class EmissionFactor(Protocol):
 
 
 class KinematicFactor:
-    """The mode bank (s.3): log p(gap, twist | state) for each requested state. Always present."""
+    """The mode bank (§3): log p(gap, twist | state) for each requested state. Always present."""
 
     def contribute(self, obs, params, gap_bias, states):
         T = int(np.asarray(obs.gap, dtype=float).shape[0])
@@ -784,12 +784,12 @@ def log_emissions(
     material: MaterialParams | None = None,
     force: ForceEmissionParams | None = None,
 ) -> np.ndarray:
-    """Assemble the per-state emission log-likelihood matrix (THEORY.md sections 3 & 4).
+    """Assemble the per-state emission log-likelihood matrix (THEORY.md §3 & §4).
 
     Evaluates, for each frame ``t`` and each requested state ``s``, the proper
     log-density ``log p(obs_t | state = s)``. Because every column is a normalized
     density over the same observation space, differences between columns are exactly
-    the log-likelihood ratios the HMM / detector consumes (THEORY.md section 4).
+    the log-likelihood ratios the HMM / detector consumes (THEORY.md §4).
 
     Parameters
     ----------
@@ -799,13 +799,13 @@ def log_emissions(
         Emission noise/speed scales.
     gap_bias :
         The resting-contact mean gap (m); the EM-calibrated offset that all contact
-        modes' gap densities are centered on (THEORY.md sections 7 & 8). FREE ignores it.
+        modes' gap densities are centered on (THEORY.md §7 & §8). FREE ignores it.
     states :
         State names (subset / reordering of ``contact.types.ALL_STATES``). The output
         columns follow this exact order.
     material :
         Optional material parameters; accepted for interface symmetry (a future,
-        compliance-aware gap/force term, THEORY.md section 7). The kinematic emissions
+        compliance-aware gap/force term, THEORY.md §7). The kinematic emissions
         here do not yet use it.
     force :
         Optional :class:`~contact.config.ForceEmissionParams` enabling the MEASURED-force

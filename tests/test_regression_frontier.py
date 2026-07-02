@@ -1,4 +1,4 @@
-"""Regression guard for the RESEARCH-FRONTIER additions (THEORY.md s.8 & s.10).
+"""Regression guard for the RESEARCH-FRONTIER additions (THEORY.md §8 & §10).
 
 This suite proves the Batch-3 frontier layer is wired in *correctly* and, just as
 importantly, that it is **inert by default** -- every new capability is OFF unless
@@ -9,7 +9,7 @@ behaviour byte-for-byte. The four guards mirror the four frontier additions:
       (the shipped default) ``ContactDetector().detect`` on ``drop_rest`` returns the
       SAME ``in_contact`` mask / ``contact_iou`` the prior rungs measured (>0.9): the
       ``uncertainty.apply_tempering`` path in :meth:`ContactDetector.detect` is never
-      taken, so the emission matrix is used unchanged (THEORY.md s.8, "per-frame
+      taken, so the emission matrix is used unchanged (THEORY.md §8, "per-frame
       measurement uncertainty" is opt-in).
 
   (2) **Tempering is a strict no-op without data.** Even with the flag flipped ON, if
@@ -17,7 +17,7 @@ behaviour byte-for-byte. The four guards mirror the four frontier additions:
       stays ``None``) and the result is *identical* to the default run -- the flag alone
       cannot change anything, only flag AND data together can.
 
-  (3) **The structure-inference tractability fork (THEORY.md s.8/s.10).** On a 5-edge
+  (3) **The structure-inference tractability fork (THEORY.md §8/§10).** On a 5-edge
       scene (``E = 5 > enumerate_max_edges = 4``) ``graph.detect_scene`` must take the
       Rao-Blackwellized particle path and still return a *valid* GraphDetectionResult
       (``active_posterior`` shape ``(T, 5)``, every marginal a probability in [0, 1],
@@ -26,7 +26,7 @@ behaviour byte-for-byte. The four guards mirror the four frontier additions:
       per-edge structure recovered, ``meta['inference'] == 'exact'``).
 
   (4) **Mode discovery returns the documented contract.** ``ContactDetector.discover_modes``
-      returns a well-formed :class:`~contact.types.DiscoveredModeResult` (THEORY.md s.8,
+      returns a well-formed :class:`~contact.types.DiscoveredModeResult` (THEORY.md §8,
       the label-free HDP-HMM mode vocabulary).
 
 The synthetic scenes are authored exactly like the Batch-2 ``test_graph.py`` ones:
@@ -53,7 +53,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from contact import graph
 from contact.config import DetectorConfig
-from contact.model import ContactDetector
+from contact.detector import ContactDetector
 from contact.types import (
     ContactEdge,
     ContactObservations,
@@ -119,7 +119,7 @@ def _two_edge_scene(T: int = 240) -> MultiBodyScene:
     floor for the whole clip (edge A active throughout); body ``b`` is lifted clear early
     and late and rests flat on the floor through the middle third (edge B active mid-clip),
     with smooth cosine descent/ascent ramps so the rest window is genuinely settled (the
-    s.4 contact emission wants gap ~ 0 AND twist ~ 0).
+    §4 contact emission wants gap ~ 0 AND twist ~ 0).
     """
     t = _time(T)
     za = np.zeros(T, dtype=float)  # A always touching
@@ -160,7 +160,7 @@ def _five_edge_scene(T: int = 120) -> MultiBodyScene:
       * ``e4`` hovers in the first half, settles onto the floor in the second (active late).
 
     The bodies that change state do so with a smooth cosine ramp at the midpoint so the
-    rest windows are genuinely settled (gap ~ 0 AND twist ~ 0, the s.4 contact peak).
+    rest windows are genuinely settled (gap ~ 0 AND twist ~ 0, the §4 contact peak).
     We assert only that the result is *structurally valid* (the spec's bar for the large-E
     particle path); the exact-path scene below carries the recovery assertions.
     """
@@ -239,12 +239,14 @@ def _synthetic_obs(T: int = 200, fps: float = 200.0) -> ContactObservations:
 
 mujoco = pytest.importorskip("mujoco")
 
-from contact import geometry, mujoco_gen, report  # noqa: E402  (after the importorskip)
+from contact import geometry
+import oracle  # noqa: E402  (after the importorskip)
+from oracle import report  # noqa: E402
 
 
 def _drop_rest_obs() -> ContactObservations:
     """The drop_rest observable channel (noisy poses -> support-relative twist)."""
-    raw = mujoco_gen.generate("drop_rest", seed=SEED)
+    raw = oracle.generate("drop_rest", seed=SEED)
     return geometry.observe(
         raw.moving, raw.support, raw.surface, raw.contact_point_local,
         geometry=getattr(raw, "geometry", None),
@@ -262,7 +264,7 @@ def test_default_config_tempering_is_inert_on_drop_rest():
     """
     obs, raw = _drop_rest_obs()
     cfg = DetectorConfig()
-    assert cfg.inference.use_uncertainty is False, "uncertainty must default OFF (s.8)"
+    assert cfg.inference.use_uncertainty is False, "uncertainty must default OFF (§8)"
 
     result = ContactDetector(cfg).detect(obs)
     scores = report.score(result, raw.truth)
@@ -308,7 +310,7 @@ def test_uncertainty_flag_without_meas_cov_is_noop():
 
 
 # --------------------------------------------------------------------------------------
-# (3) Structure-inference tractability fork (THEORY.md s.8/s.10).
+# (3) Structure-inference tractability fork (THEORY.md §8/§10).
 # These are pure synthetic scenes -- no MuJoCo needed -- so they always run.
 # --------------------------------------------------------------------------------------
 
@@ -327,7 +329,7 @@ def test_detect_scene_large_graph_takes_particle_path():
     T = scene.bodies["b0"].t.shape[0]
 
     cfg = DetectorConfig()
-    assert cfg.inference.enumerate_max_edges == 4, "default enumerate cap is 4 (s.8)"
+    assert cfg.inference.enumerate_max_edges == 4, "default enumerate cap is 4 (§8)"
     assert len(scene.edges) == 5 > cfg.inference.enumerate_max_edges
 
     result = graph.detect_scene(scene, cfg)
@@ -401,12 +403,12 @@ def test_detect_scene_small_graph_takes_exact_enumeration():
 
 
 # --------------------------------------------------------------------------------------
-# (4) Mode discovery returns the documented DiscoveredModeResult contract (s.8).
+# (4) Mode discovery returns the documented DiscoveredModeResult contract (§8).
 # --------------------------------------------------------------------------------------
 
 
 def test_discover_modes_returns_discovered_mode_result():
-    """ContactDetector.discover_modes(obs) returns a well-formed DiscoveredModeResult (s.8).
+    """ContactDetector.discover_modes(obs) returns a well-formed DiscoveredModeResult (§8).
 
     The label-free HDP-HMM entrypoint must return the contract types.py pins: per-frame
     integer ``labels`` (length T), a positive ``n_modes`` that matches the number of

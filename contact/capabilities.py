@@ -1,7 +1,7 @@
 """DESIGN.md PHASE 5 (the capstone): the CAPABILITY REGISTRY + VALUE-OF-INFORMATION.
 
 This module is the thin, declarative orchestration layer the whole DESIGN points at
-(PART I sections 4 "the capability registry", 5 "evidence factors", 8 "value of
+(PART I §4 "the capability registry", §5 "evidence factors", §8 "value of
 information"; PART III III.1 the data contracts). It unifies the optional, capability-gated
 evidence -- per-frame contact *geometry* (the fidelity ladder of
 :mod:`contact.geometry_resolvers`) and the *force* channel
@@ -14,13 +14,13 @@ It is **purely additive and strictly on top of the validated floor**. It does NO
 detector, the emissions, the geometry core, or any existing detection path: every call here
 funnels through the already-shipped, already-gated seams --
 :func:`contact.geometry.observe(..., geometry=<resolved>)` and
-:meth:`contact.model.ContactDetector.detect` -- so with an empty :class:`Capabilities` the
+:meth:`contact.detector.ContactDetector.detect` -- so with an empty :class:`Capabilities` the
 result is byte-identical to today's kinematic/flat-floor pipeline (DESIGN.md PART I sections
 2 & 7: "the validated flat-floor/kinematic path is the guaranteed floor"). Declaring a shape
 swaps in a higher-fidelity resolver; declaring a (measured) force adds the gated force factor;
 neither rewrites a single line of the inference.
 
-On top of the registry, :func:`value_of_information` answers DESIGN.md PART I section 8 --
+On top of the registry, :func:`value_of_information` answers DESIGN.md PART I §8 --
 *what should the user provide next?* -- by counterfactually re-running detection with each
 hypothesized capability and ranking them by how much the answer actually moves. The robust
 signal here (DESIGN.md PART II premise note) is the **MAP-mode change fraction**, not the
@@ -44,7 +44,7 @@ import numpy as np
 from .config import DetectorConfig, MaterialParams
 from .geometry import observe
 from .geometry_resolvers import BoxPlane, MeshConvex, MeshPlane, SpherePlane, SphereSphere
-from .model import ContactDetector
+from .detector import ContactDetector
 from .types import (
     IMPACT,
     ContactGeometry,
@@ -58,12 +58,12 @@ __all__ = ["Capabilities", "detect_pair", "value_of_information", "_resolve_geom
 
 
 # --------------------------------------------------------------------------------------
-# The capability declaration (DESIGN.md PART I section 4 / PART III III.1).
+# The capability declaration (DESIGN.md PART I §4 / PART III III.1).
 #
 # One small, introspectable record of "what the user can give us" for a single body-pair
 # (edge). Every field defaults to the ABSENCE of that capability, so the default
 # `Capabilities()` selects exactly the validated floor (FlatRegion geometry, no force
-# factor, no material, no tempering) -- DESIGN.md PART I section 7 invariant 1.
+# factor, no material, no tempering) -- DESIGN.md PART I §7 invariant 1.
 # --------------------------------------------------------------------------------------
 
 
@@ -75,7 +75,7 @@ class Capabilities:
     concrete :class:`~contact.types.ContactGeometry` resolver plus the set of enabled
     evidence factors, then runs the *existing* detector. Everything defaults to ABSENT, so
     a bare :class:`Capabilities` reproduces today's kinematic/flat-floor estimate
-    bit-for-bit (the no-op-when-absent contract, DESIGN.md PART I sections 5 & 7).
+    bit-for-bit (the no-op-when-absent contract, DESIGN.md PART I §5 & §7).
 
     Fields
     ------
@@ -91,7 +91,7 @@ class Capabilities:
         ``{"r_moving": .., "r_support": ..}`` for the sphere resolvers or
         ``{"half_extents": [..]}`` for the box. Empty by default.
     force:
-        The force channel (DESIGN.md PART I section 6). ``"none"`` (default) -> no force
+        The force channel (DESIGN.md PART I §6). ``"none"`` (default) -> no force
         factor (the kinematics-only floor). ``"measured"`` -> the caller supplies a sensor
         stream (the ``truth_force`` argument of :func:`detect_pair`) that populates
         :attr:`~contact.types.ContactObservations.normal_force`. ``"inferred"`` -> the
@@ -100,7 +100,7 @@ class Capabilities:
     material:
         Optional :class:`~contact.config.MaterialParams` (mu / stiffness / restitution).
         When set, detection runs against a config copy carrying it (e.g. a known stiffness
-        turns penetration into a calibrated force gauge, THEORY.md s.7). ``None`` -> the
+        turns penetration into a calibrated force gauge, THEORY.md §7). ``None`` -> the
         config's own material is used unchanged.
     meas_cov:
         Declared availability of a per-frame measurement covariance (DESIGN.md §3.5). When
@@ -157,10 +157,10 @@ def _is_field_default(f: "dataclasses.Field", value: object) -> bool:
 
 
 # --------------------------------------------------------------------------------------
-# Geometry selection (DESIGN.md PART I section 4: "pick the richest resolver the
+# Geometry selection (DESIGN.md PART I §4: "pick the richest resolver the
 # (shapeA, shapeB) pair supports, else FlatRegion"). The dispatch is on the declared
 # `shape` string; an absent or unrecognized shape returns None, which `observe` reads as
-# "use the default FlatRegion" -- never worse than today (DESIGN.md s.11).
+# "use the default FlatRegion" -- never worse than today (DESIGN.md §11).
 # --------------------------------------------------------------------------------------
 
 
@@ -206,7 +206,7 @@ def _resolve_geometry(
     * anything else       -> ``None`` (FlatRegion fallback). NOTE: an UNRECOGNIZED shape is
       intentionally degraded to the floor rather than raised, so a forward/typo'd shape can
       never make the estimate *worse* than today's flat-plane baseline (DESIGN.md PART I
-      section 7 / s.11 "unsupported pairs fall back to FlatRegion").
+      §7 / §11 "unsupported pairs fall back to FlatRegion").
     """
     make = SHAPE_RESOLVERS.get(caps.shape)  # None for shape=None or an UNRECOGNIZED shape
     if make is None:
@@ -217,7 +217,7 @@ def _resolve_geometry(
 
 
 # --------------------------------------------------------------------------------------
-# The single-edge entrypoint (DESIGN.md PART I sections 4-6): declaration -> DetectionResult.
+# The single-edge entrypoint (DESIGN.md PART I §4-§6): declaration -> DetectionResult.
 # A thin selector ON TOP of the existing `observe` + `ContactDetector.detect`; with
 # `Capabilities()` it is byte-identical to today's pipeline.
 # --------------------------------------------------------------------------------------
@@ -242,7 +242,7 @@ def _force_inferred(obs, truth_force):
         "Capabilities(force='inferred') is unsupported by the bare-pair detect_pair API. Inferred "
         "force is a WHOLE-BODY quantity: it is recovered at the scene/body level from the body's "
         "mass/inertia and the scenario-level raw candidate points/normals/gaps via "
-        "`contact.dynamics_id.infer_normal_force(raw, config)`, which requires a RawScenario "
+        "`contact.inverse_dynamics.infer_normal_force(raw, config)`, which requires a RawScenario "
         "(inertials + candidates) that the bare (moving, support, surface, contact_point_local) pair "
         "does not carry. Either use force='measured' with a supplied sensor stream, or run the "
         "inferred-force virtual sensor at the scene/body level (DESIGN.md PART II.B / III.4) and pass "
@@ -270,14 +270,14 @@ def detect_pair(
 ) -> DetectionResult:
     """Detect contact for one body-pair under a :class:`Capabilities` declaration.
 
-    The capability registry's main verb (DESIGN.md PART I sections 4-6). It (1) selects the
+    The capability registry's main verb (DESIGN.md PART I §4-§6). It (1) selects the
     geometry resolver the declaration supports, (2) runs the *existing*
     :func:`contact.geometry.observe` through that resolver, (3) wires the declared force /
     material / measurement-covariance evidence into the *existing*
-    :meth:`contact.model.ContactDetector.detect`, and (4) returns its
+    :meth:`contact.detector.ContactDetector.detect`, and (4) returns its
     :class:`~contact.types.DetectionResult` unchanged. No detection logic lives here -- this
     is orchestration only, so an empty :class:`Capabilities` reproduces today's result
-    bit-for-bit (DESIGN.md PART I section 7 invariant 1).
+    bit-for-bit (DESIGN.md PART I §7 invariant 1).
 
     Parameters
     ----------
@@ -296,7 +296,7 @@ def detect_pair(
         ``caps.force == "measured"`` (it then populates
         :attr:`~contact.types.ContactObservations.normal_force`). Ignored otherwise.
 
-    Force channel (DESIGN.md PART I section 6)
+    Force channel (DESIGN.md PART I §6)
     ------------------------------------------
     * ``"none"``     -> the observations are left untouched (no force factor; the floor).
     * ``"measured"`` -> ``obs = dataclasses.replace(obs, normal_force=truth_force)`` -- the
@@ -304,7 +304,7 @@ def detect_pair(
       kinematically, becomes a decisive force pulse). Requires ``truth_force``.
     * ``"inferred"`` -> raises :class:`NotImplementedError`: inferred force is a WHOLE-BODY
       quantity recovered at the scene/body level from mass/inertia and the candidate
-      points/normals/gaps via :func:`contact.dynamics_id.infer_normal_force`, which needs a
+      points/normals/gaps via :func:`contact.inverse_dynamics.infer_normal_force`, which needs a
       :class:`~contact.types.RawScenario` -- inputs the bare ``(moving, support, surface,
       contact_point_local)`` pair does not carry. Run the virtual sensor at the scene level
       (DESIGN.md PART II.B / III.4) and feed its output back in as a ``"measured"`` stream.
@@ -326,7 +326,7 @@ def detect_pair(
         geometry=geom,
     )
 
-    # (3a) Force channel: the gated optional observation (DESIGN.md PART I section 6 / II.A).
+    # (3a) Force channel: the gated optional observation (DESIGN.md PART I §6 / II.A).
     prepare = FORCE_PREPARERS.get(caps.force)
     if prepare is None:
         raise ValueError(
@@ -354,7 +354,7 @@ def detect_pair(
 
 
 # --------------------------------------------------------------------------------------
-# Value of information (DESIGN.md PART I section 8): "what should the user provide next?"
+# Value of information (DESIGN.md PART I §8): "what should the user provide next?"
 # --------------------------------------------------------------------------------------
 
 
@@ -364,7 +364,7 @@ class _VoIRanking(list):
     IS a ``list[tuple[str, float]]`` -- ``(capability name, MAP-change gain)`` sorted by gain
     DESC, the required core -- so it indexes / iterates / ``len`` / compares exactly like a
     plain list. The single ADDITIVE extra is :attr:`guidance`: a list of short canned-guidance
-    strings (DESIGN.md PART I section 8), e.g. a force recommendation when the kinematic
+    strings (DESIGN.md PART I §8), e.g. a force recommendation when the kinematic
     detector fires impulse atoms at frames whose MAP never reaches IMPACT (the force-transfer,
     "unobservable from kinematics" signature). The guidance NEVER affects the ordering -- it
     is a diagnostic bonus closing the "best with what you can give us" loop.
@@ -376,12 +376,12 @@ class _VoIRanking(list):
 
 
 def _force_transfer_guidance(base: DetectionResult) -> list[str]:
-    """Canned VoI guidance from the BASE detection (DESIGN.md PART I section 8).
+    """Canned VoI guidance from the BASE detection (DESIGN.md PART I §8).
 
     The "unobservable from kinematics" signature: the matched-filter impact detector fires
     velocity-step atoms (it *sees* a closing velocity), yet the MAP path at those frames
     never enters IMPACT -- the contact's force pulse is invisible to kinematics (the cradle
-    clack, THEORY.md s.6-s.8). When that happens we recommend declaring a force channel.
+    clack, THEORY.md §6-§8). When that happens we recommend declaring a force channel.
     """
     impulses = list(base.impulses)
     n = len(base.map_state)
@@ -398,7 +398,7 @@ def _force_transfer_guidance(base: DetectionResult) -> list[str]:
         f"'{IMPACT}' -- the closing velocity is seen but the contact's force pulse is not. "
         f"Declare a force channel (force='measured' with a sensor stream, or the "
         f"scene/body-level inferred virtual sensor) to resolve these clacks "
-        f"(DESIGN.md PART I sections 6 & 8)."
+        f"(DESIGN.md PART I §6 & §8)."
     ]
 
 

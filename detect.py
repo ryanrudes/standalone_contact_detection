@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""End-to-end contact-detection CLI (THEORY.md sections 9 & 10).
+"""End-to-end contact-detection CLI (THEORY.md §9 & §10).
 
 Ties the whole package together on one MuJoCo scenario, exercising the exact
-THEORY.md s.9 workflow: simulate -> expose only the noisy observable channel
+THEORY.md §9 workflow: simulate -> expose only the noisy observable channel
 (poses) -> run the detector -> score the inferred posterior against the withheld
 ground truth.
 
-    generate(scenario)            # MuJoCo truth factory (s.9)
-        -> geometry.observe(...)  # poses -> support-relative observations (s.1, s.3)
-        -> ContactDetector().detect(...)  # the generative-HMM estimator (s.4-8)
-        -> report.print_report / plot_result  # score & visualize (s.9)
+    generate(scenario)            # MuJoCo truth factory (§9)
+        -> geometry.observe(...)  # poses -> support-relative observations (§1, §3)
+        -> ContactDetector().detect(...)  # the generative-HMM estimator (§4-8)
+        -> report.print_report / plot_result  # score & visualize (§9)
 
 Usage
 -----
@@ -23,28 +23,28 @@ Run with no arguments for the ``drop_rest`` default.
 from __future__ import annotations
 
 import argparse
+import os
 
 import numpy as np
 
 from contact import (
     ContactDetector,
     DetectorConfig,
-    SCENARIOS,
     contact_implicit_from_raw,
-    generate,
     observe,
 )
-from contact import report
+from oracle import SCENARIOS, generate, report
 
-#: Where the diagnostic figure is written (unless --no-plot).
-_PLOT_PATH = "/Users/ryanrudes/GitHub/standalone_contact_detection/contact_detection.png"
+#: Where the diagnostic figure is written (unless --no-plot): next to this script, like
+#: detect_scene.py's default (the .png is git-ignored).
+_PLOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contact_detection.png")
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the CLI arguments (scenario / noise / plotting / material stiffness)."""
     parser = argparse.ArgumentParser(
         description="Run the probabilistic contact detector on a MuJoCo scenario "
-        "and score it against ground truth (THEORY.md s.9/s.10)."
+        "and score it against ground truth (THEORY.md §9/§10)."
     )
     parser.add_argument(
         "--scenario",
@@ -69,24 +69,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="Contact material stiffness (N/m). When given, penetration becomes a "
-        "calibrated force gauge (lambda = k*delta, THEORY.md s.7) and the estimated "
+        "calibrated force gauge (lambda = k*delta, THEORY.md §7) and the estimated "
         "normal force is computed.",
     )
     parser.add_argument(
         "--discover-modes",
         action="store_true",
         help="Additionally run UNSUPERVISED contact-mode discovery (sticky HDP-HMM, "
-        "THEORY.md s.8) on the same observations and print the discovered modes, their "
+        "THEORY.md §8) on the same observations and print the discovered modes, their "
         "signatures, alignment to the canonical modes, and a comparison against the "
         "supervised MAP segmentation. Off by default; does not change detection.",
     )
     parser.add_argument(
         "--inverse-dynamics",
         action="store_true",
-        help="Additionally run CONTACT-IMPLICIT INVERSE DYNAMICS (THEORY.md s.8, the "
+        help="Additionally run CONTACT-IMPLICIT INVERSE DYNAMICS (THEORY.md §8, the "
         "north star): jointly recover the contact forces and active set that explain the "
-        "observed motion under Newton-Euler with Signorini complementarity (s.2) and the "
-        "Coulomb cone (s.7), and score the recovered total normal force at rest vs m*g and "
+        "observed motion under Newton-Euler with Signorini complementarity (§2) and the "
+        "Coulomb cone (§7), and score the recovered total normal force at rest vs m*g and "
         "vs the MuJoCo summed corner force, the active-set timeline vs truth, and the mean "
         "wrench residual. Only runs on scenarios that expose the inertial/candidate "
         "metadata (the single-rigid-box-on-plane scenarios); skipped with a note "
@@ -96,7 +96,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _run_inverse_dynamics(raw, config: DetectorConfig, name: str) -> None:
-    """Run contact-implicit inverse dynamics on a scenario and report it (THEORY.md s.8).
+    """Run contact-implicit inverse dynamics on a scenario and report it (THEORY.md §8).
 
     Only scenarios that expose ``raw.meta['inertial']`` AND ``raw.meta['candidates']``
     (the single-rigid-box-on-plane family: ``drop_rest``, ``drop_rest_liftoff``,
@@ -125,7 +125,7 @@ def _run_inverse_dynamics(raw, config: DetectorConfig, name: str) -> None:
 def _report_discovered_modes(detector, obs, result) -> None:
     """Run unsupervised mode discovery and print it against the supervised MAP modes.
 
-    THEORY.md s.8 research surface: fit a sticky HDP-HMM to the per-frame twist feature
+    THEORY.md §8 research surface: fit a sticky HDP-HMM to the per-frame twist feature
     (label-free) and report (a) how many modes it found, (b) each mode's mean physical
     signature ``[gap, |v_n|, |v_t|, |omega_n|, |omega_t|]`` and its nearest canonical
     mode (validation-only alignment), and (c) for each discovered mode the distribution
@@ -134,7 +134,7 @@ def _report_discovered_modes(detector, obs, result) -> None:
     """
     disc = detector.discover_modes(obs)
     print()
-    print("Unsupervised mode discovery (sticky HDP-HMM, THEORY.md s.8):")
+    print("Unsupervised mode discovery (sticky HDP-HMM, THEORY.md §8):")
     print(f"  discovered {disc.n_modes} mode(s) over {len(disc.labels)} frames")
     map_state = list(result.map_state)
     for mode_id in sorted(disc.signatures):
@@ -166,10 +166,10 @@ def main(argv: list[str] | None = None) -> None:
     """Generate one scenario, detect contacts, report scores, and optionally plot."""
     args = _parse_args(argv)
 
-    # --- 1. MuJoCo truth factory: simulate and label (THEORY.md s.9). ---
+    # --- 1. MuJoCo truth factory: simulate and label (THEORY.md §9). ---
     raw = generate(args.scenario, noise_m=args.noise)
 
-    # --- 2. Poses -> support-relative observations (THEORY.md s.1, s.3). ---
+    # --- 2. Poses -> support-relative observations (THEORY.md §1, §3). ---
     # Smoothing time before differentiation comes from the detector config so the
     # observation pipeline and the emission scales agree on the same time constant.
     config = DetectorConfig()
@@ -185,21 +185,21 @@ def main(argv: list[str] | None = None) -> None:
         geometry=getattr(raw, "geometry", None),
     )
 
-    # --- 3. Run the generative-HMM detector (THEORY.md s.4-8). ---
+    # --- 3. Run the generative-HMM detector (THEORY.md §4-8). ---
     detector = ContactDetector(config)
     result = detector.detect(obs)
 
-    # --- 4. Score against the withheld truth + report (THEORY.md s.9). ---
+    # --- 4. Score against the withheld truth + report (THEORY.md §9). ---
     report.print_report(args.scenario, result, raw.truth)
     scores = report.score(result, raw.truth)
     print("Score dict:", scores)
 
-    # --- impact-atom summary (THEORY.md s.6): count + measured restitutions. ---
+    # --- impact-atom summary (THEORY.md §6): count + measured restitutions. ---
     # The impulses are the matched-filter velocity-step atoms of the force measure. We
     # print how many were found and the restitution e of each that resolved a bounce
     # (NaN ones -- plastic / unresolved landings -- are reported as n/a). The impulse
     # magnitude needs the moving body's mass, which the observable channel does not
-    # carry (s.7), so it is NaN here and surfaced in the full report above.
+    # carry (§7), so it is NaN here and surfaced in the full report above.
     n_imp = len(result.impulses)
     e_vals = [imp.restitution for imp in result.impulses if not np.isnan(imp.restitution)]
     print(f"Detected impacts: {n_imp}")
@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> None:
         e_str = ", ".join(f"{e:.3f}" for e in e_vals)
         print(f"  measured restitutions: {e_str}")
 
-    # --- material/dynamics summary (THEORY.md s.7), only when --stiffness was given. ---
+    # --- material/dynamics summary (THEORY.md §7), only when --stiffness was given. ---
     # With a stiffness the detector turns penetration into a calibrated force gauge
     # (lambda = k*delta) and labels each contact frame stick/slip via the Coulomb cone.
     if args.stiffness is not None and result.normal_force is not None:
@@ -218,11 +218,11 @@ def main(argv: list[str] | None = None) -> None:
                 f"peak {float(np.nanmax(nf)):.2f} N"
             )
 
-    # --- unsupervised mode-discovery surface (THEORY.md s.8), opt-in via --discover-modes.
+    # --- unsupervised mode-discovery surface (THEORY.md §8), opt-in via --discover-modes.
     if args.discover_modes:
         _report_discovered_modes(detector, obs, result)
 
-    # --- contact-implicit inverse dynamics (THEORY.md s.8 north star), opt-in. ----------
+    # --- contact-implicit inverse dynamics (THEORY.md §8 north star), opt-in. ----------
     # The dual, dynamics-first path: recover the contact forces + active set that explain
     # the OBSERVED motion under Newton-Euler with Signorini + Coulomb, and score them
     # against the withheld physical truth (m*g, MuJoCo corner forces, the truth active

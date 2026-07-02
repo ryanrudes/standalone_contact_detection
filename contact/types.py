@@ -11,7 +11,7 @@ Frame conventions
 * A *contact frame* is attached to the support surface: its z-axis is the surface
   outward normal, and x/y span the tangent plane. All `ContactObservations` live
   in this (possibly moving, possibly non-inertial) contact frame — see THEORY.md
-  sections 1 and 3 for why contact must be measured support-relative.
+  §1 & §3 for why contact must be measured support-relative.
 * Quaternions are scalar-first (w, x, y, z), unit norm.
 """
 
@@ -23,7 +23,7 @@ from typing import Protocol
 import numpy as np
 
 # --------------------------------------------------------------------------------------
-# Mode vocabulary (THEORY.md section 3: modes are twist-subspaces of the relative motion)
+# Mode vocabulary (THEORY.md §3: modes are twist-subspaces of the relative motion)
 # --------------------------------------------------------------------------------------
 
 FREE = "free"
@@ -98,7 +98,7 @@ class ContactObservations:
     omega_tangent: np.ndarray
     meas_cov: np.ndarray | None = None  # optional per-frame measurement variance of the contact
     #: point (T,) or (T,3,3); when present and enabled, scales emission noise so noisy/occluded
-    #: frames contribute less (THEORY.md section 8). None => homogeneous noise.
+    #: frames contribute less (THEORY.md §8). None => homogeneous noise.
     normal_force: np.ndarray | None = None  # optional (T,) measured normal contact force (N);
     #: DESIGN.md PART II.A / PHASE 4a. The MEASURED-force observation channel, mirroring the
     #: optional `meas_cov`. When present, a per-state force emission term (FREE: half-normal at 0;
@@ -218,7 +218,7 @@ class RawScenario:
 
 @dataclass
 class ContactEvent:
-    """A make/break event (THEORY.md section 6)."""
+    """A make/break event (THEORY.md §6)."""
 
     kind: str  # "touchdown" | "liftoff"
     time: float
@@ -227,7 +227,7 @@ class ContactEvent:
 
 @dataclass
 class ContactImpulse:
-    """An impulsive contact event — an atom in the force measure (THEORY.md section 6).
+    """An impulsive contact event — an atom in the force measure (THEORY.md §6).
 
     time:           event time (s).
     index:          nearest frame index.
@@ -255,7 +255,7 @@ class ContactInterval:
 
 @dataclass
 class ContactEdge:
-    """One candidate contact in a multi-body scene (THEORY.md section 8).
+    """One candidate contact in a multi-body scene (THEORY.md §8).
 
     A contact is between a pair of bodies; the surface is carried by the support body
     and the tracked material point by the moving body. The single-pair detector runs
@@ -282,7 +282,7 @@ class ContactEdge:
 
 @dataclass
 class MultiBodyScene:
-    """A scene of several bodies and the candidate contacts among them (THEORY.md s.8).
+    """A scene of several bodies and the candidate contacts among them (THEORY.md §8).
 
     name:   scene id.
     bodies: dict body-name -> PoseTrajectory (all sharing the same time base).
@@ -324,13 +324,13 @@ class DetectionResult:
     resting_bias: float
     normal_force: np.ndarray | None = None
     states: list[str] = field(default_factory=lambda: list(ALL_STATES))
-    impulses: list[ContactImpulse] = field(default_factory=list)  # force-as-measure atoms (s.6)
-    slip_state: list[str] | None = None  # per-frame "stick"/"slip"/"" (s.7), or None if not computed
+    impulses: list[ContactImpulse] = field(default_factory=list)  # force-as-measure atoms (§6)
+    slip_state: list[str] | None = None  # per-frame "stick"/"slip"/"" (§7), or None if not computed
 
 
 @dataclass
 class DiscoveredModeResult:
-    """Output of unsupervised contact-mode discovery (THEORY.md section 8: HDP-HMM).
+    """Output of unsupervised contact-mode discovery (THEORY.md §8: HDP-HMM).
 
     labels:          (T,) integer id of the discovered mode active at each frame.
     n_modes:         number of distinct modes the model actually used.
@@ -348,7 +348,7 @@ class DiscoveredModeResult:
 
 @dataclass
 class InverseDynamicsResult:
-    """Output of contact-implicit inverse dynamics (THEORY.md section 8, the north star).
+    """Output of contact-implicit inverse dynamics (THEORY.md §8, the north star).
 
     The contact forces that explain the observed motion under Newton-Euler dynamics with
     complementarity + friction, plus the active set they imply.
@@ -373,7 +373,7 @@ class InverseDynamicsResult:
 
 @dataclass
 class GraphDetectionResult:
-    """Joint contact-state estimate over a multi-body scene (THEORY.md section 8).
+    """Joint contact-state estimate over a multi-body scene (THEORY.md §8).
 
     t:               (T,) seconds.
     edges:           ordered list of edge ids (columns of active_posterior).

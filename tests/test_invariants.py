@@ -1,9 +1,9 @@
-"""Executable derivation of two structural invariants (THEORY.md sections 1 & 4).
+"""Executable derivation of two structural invariants (THEORY.md §1 & §4).
 
-(s.1) observe() is SUPPORT-RELATIVE: a body rigidly co-moving with a translating support reads
+(§1) observe() is SUPPORT-RELATIVE: a body rigidly co-moving with a translating support reads
       STATIC (relative twist ~ 0) despite large world motion -- the method's foundational claim
       (a foot on a moving skateboard is in solid contact though it screams across the world).
-(s.4) ROLLING is the one non-product mode; its coupled (v_t, omega_t) block is renormalized by
+(§4) ROLLING is the one non-product mode; its coupled (v_t, omega_t) block is renormalized by
       Z_res so the column is a proper density. We recompute Z_res by an independent 2-D quadrature
       and assert the code's normalizer matches -- i.e. the coupled block integrates to 1.
 

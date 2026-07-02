@@ -1,25 +1,25 @@
-"""End-to-end validation of the multi-body contact-graph detector (THEORY.md s.8).
+"""End-to-end validation of the multi-body contact-graph detector (THEORY.md §8).
 
-This is rung 5 of the pragmatic ladder (THEORY.md s.10) exercised as a whole. For each
-MuJoCo *scene* we run the exact s.8/s.9 workflow ---
+This is rung 5 of the pragmatic ladder (THEORY.md §10) exercised as a whole. For each
+MuJoCo *scene* we run the exact §8/§9 workflow ---
 
-    mujoco_gen.generate_scene  ->  graph.detect_scene  ->  report.score (per edge)
+    oracle.generate_scene  ->  graph.detect_scene  ->  report.score (per edge)
 
 --- handing the detector only the observable channel (noisy body poses) and scoring its
 inferred *joint active-set structure* and per-edge contact decisions against the withheld
 simulator truth. Each scene asserts the specific theoretical claim it was built to stress:
 
-* ``person_on_skateboard`` -- the s.1/s.8 relative-frame + graph payoff: BOTH edges are in
+* ``person_on_skateboard`` -- the §1/§8 relative-frame + graph payoff: BOTH edges are in
   contact for the whole clip, and the person<->deck edge is STATIC *even though the person
   has a large WORLD velocity* (~1.1 m/s), because the contact is measured support-relative
   on a moving deck. The deck<->ground edge moves (rolling/sliding) consistent with the
   wheeled board rolling across the ground.
 
-* ``box_on_two_blocks`` -- the s.8 changing-active-set test: the MAP active set drops from
+* ``box_on_two_blocks`` -- the §8 changing-active-set test: the MAP active set drops from
   cardinality 2 ({box_blockL, box_blockR}) to 1 ({box_blockL}) when one support is removed
   in truth, recovered within a tolerance window of the true structural change.
 
-Calibration notes (THEORY.md s.4/s.7 observability):
+Calibration notes (THEORY.md §4/§7 observability):
 
 * The two scenes sit on opposite sides of the observability spectrum, so they take
   different *physically-interpretable* emission configs (real velocity / gap scales), not a
@@ -30,20 +30,20 @@ Calibration notes (THEORY.md s.4/s.7 observability):
   ``slide_speed`` / ``vel_sigma`` / ``free_vel_sigma`` to the board's actual speed regime so
   the genuinely-in-contact edge is recovered (it reads SLIDING, not the wheels' true
   ROLLING, precisely because the tracked board point does not itself spin -- a faithful,
-  documented consequence of which material point the mocap rig tracks, THEORY.md s.3).
+  documented consequence of which material point the mocap rig tracks, THEORY.md §3).
 
 * The box_on_two_blocks deactivation is, by construction, a pure *loading* event: removing
   blockR redistributes weight with essentially NO motion (the wide blockL holds the box
   level; the box settles <0.1 mm and tilts <0.03 deg) and only a sub-millimetre (~0.4 mm)
-  geometric separation. THEORY.md s.7's observability theorem says force/loading is
+  geometric separation. THEORY.md §7's observability theorem says force/loading is
   unrecoverable from kinematics; the *only* kinematic trace of the support removal here is
   that tiny gap opening. To read it we therefore (a) use the clean (noise-free) observable
   channel -- the 0.4 mm signal is smaller than the default 0.5 mm mocap noise, so any noise
-  would bury it (s.4), and we verified the assertion is impossible under default noise --
+  would bury it (§4), and we verified the assertion is impossible under default noise --
   and (b) tighten the gap emission tolerance (``gap_sigma_gap``) and disable the
   resting-bias EM so the 0.4 mm opening clears the still-body STATIC preference. This is a
   deliberately knife-edge demonstration that the structural change is *barely* observable
-  from kinematics alone -- exactly the s.7 message -- not a claim that it is robust.
+  from kinematics alone -- exactly the §7 message -- not a claim that it is robust.
 
 MuJoCo is required; if it is not importable the whole module is skipped (the graph/detector
 core is tested elsewhere without the simulator).
@@ -66,7 +66,9 @@ if str(_REPO_ROOT) not in sys.path:
 # The simulator is the only hard external dependency of this suite; skip cleanly if absent.
 mujoco = pytest.importorskip("mujoco")
 
-from contact import graph, mujoco_gen, report
+from contact import graph
+import oracle
+from oracle import report
 from contact.config import DetectorConfig
 from contact.types import FREE, ROLLING, SLIDING, STATIC
 
@@ -81,18 +83,18 @@ SEED = 12345
 
 
 def _dominant_mode(map_state: list[str]) -> str:
-    """Most frequent non-FREE MAP label of an edge's per-frame path (its overall mode, s.3)."""
+    """Most frequent non-FREE MAP label of an edge's per-frame path (its overall mode, §3)."""
     counts = Counter(m for m in map_state if m != FREE)
     return counts.most_common(1)[0][0] if counts else FREE
 
 
 def _map_cardinality(graph_result) -> np.ndarray:
-    """Per-frame size of the MAP active set (number of simultaneously active edges, s.8)."""
+    """Per-frame size of the MAP active set (number of simultaneously active edges, §8)."""
     return np.array([len(s) for s in graph_result.map_active_set], dtype=int)
 
 
 def _true_cardinality(scene, edges: list[str]) -> np.ndarray:
-    """Per-frame size of the TRUE active set from each edge's withheld ``in_contact`` (s.9)."""
+    """Per-frame size of the TRUE active set from each edge's withheld ``in_contact`` (§9)."""
     masks = [np.asarray(scene.truth[eid].in_contact, dtype=int) for eid in edges]
     return np.sum(masks, axis=0)
 
@@ -100,7 +102,7 @@ def _true_cardinality(scene, edges: list[str]) -> np.ndarray:
 def _first_drop_time(cardinality: np.ndarray, t: np.ndarray, hi: int, lo_max: int) -> float:
     """Time of the first frame where ``cardinality`` falls from ``hi`` to ``<= lo_max``.
 
-    THEORY.md s.5/s.8: the active set persists, then changes at a discrete guard instant;
+    THEORY.md §5/§8: the active set persists, then changes at a discrete guard instant;
     this finds that downward structural transition. Returns ``nan`` if it never drops.
     """
     drops = np.flatnonzero((cardinality[:-1] == hi) & (cardinality[1:] <= lo_max))
@@ -111,16 +113,16 @@ def _first_drop_time(cardinality: np.ndarray, t: np.ndarray, hi: int, lo_max: in
 
 
 # --------------------------------------------------------------------------------------
-# person_on_skateboard: the relative-frame + graph payoff (THEORY.md s.1 / s.8).
+# person_on_skateboard: the relative-frame + graph payoff (THEORY.md §1 / §8).
 # --------------------------------------------------------------------------------------
 
 
 def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck():
-    """BOTH edges in contact; person<->deck STATIC despite large WORLD velocity (s.1/s.8).
+    """BOTH edges in contact; person<->deck STATIC despite large WORLD velocity (§1/§8).
 
-    The whole point of measuring contact support-relative (THEORY.md s.1) is that a body
+    The whole point of measuring contact support-relative (THEORY.md §1) is that a body
     riding a fast support reads ~0 *relative* twist: the person screams across the world at
-    ~1.1 m/s yet is in solid STATIC contact with the deck. The graph layer (s.8) recovers
+    ~1.1 m/s yet is in solid STATIC contact with the deck. The graph layer (§8) recovers
     both edges of the contact graph -- person<->deck and deck<->ground -- as simultaneously
     active for the whole clip.
 
@@ -128,13 +130,13 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     non-spinning point), so its observable signature is a fast STEADY tangential slip; we
     widen the velocity emission scales to that regime (default ``slide_speed`` is tuned for
     a slow human slide and would call the fast steady slip "free"). It then reads SLIDING --
-    rolling-vs-sliding here is set by which material point the rig tracks, THEORY.md s.3.
+    rolling-vs-sliding here is set by which material point the rig tracks, THEORY.md §3.
     """
-    scene = mujoco_gen.generate_scene("person_on_skateboard", seed=SEED)
+    scene = oracle.generate_scene("person_on_skateboard", seed=SEED)
 
     cfg = DetectorConfig()
     # Tune the translational-velocity emission to the board's actual fast-steady-slip regime
-    # (THEORY.md s.3/s.4: physically-interpretable speed scales, not simulator-specific
+    # (THEORY.md §3/§4: physically-interpretable speed scales, not simulator-specific
     # magic). ~1.1 m/s is the board's world translation speed, which is what the tracked
     # board origin's tangential velocity reads on the deck<->ground edge.
     cfg.emission.slide_speed = 1.1
@@ -156,7 +158,7 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     )
 
     # --- the joint structure: BOTH edges active simultaneously for most of the clip ------
-    # active_posterior[t, e] = P(edge e active) after the joint structure inference (s.8).
+    # active_posterior[t, e] = P(edge e active) after the joint structure inference (§8).
     eidx = {e: i for i, e in enumerate(edges)}
     both_active = np.all(result.active_posterior > 0.5, axis=1)
     assert np.mean(both_active) > 0.9, (
@@ -180,7 +182,7 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     )
 
     # --- ... EVEN THOUGH the person has a large WORLD-frame velocity. ----------------------
-    # This is the relative-frame + graph payoff (THEORY.md s.1/s.8): a world-frame speed
+    # This is the relative-frame + graph payoff (THEORY.md §1/§8): a world-frame speed
     # test would call this fast-moving contact "moving, therefore not in contact" and be
     # wrong; the support-relative frame on the moving deck reads ~0 relative twist -> STATIC.
     person = scene.bodies["person"]
@@ -188,7 +190,7 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     world_dx = person.position[-1, 0] - person.position[0, 0]
     world_speed = abs(world_dx) / (t[-1] - t[0])
     assert world_speed > 0.5, (
-        f"sanity: the person should be moving fast in the world for this to be the s.1 "
+        f"sanity: the person should be moving fast in the world for this to be the §1 "
         f"payoff; got {world_speed:.3f} m/s"
     )
 
@@ -196,8 +198,8 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
     # The edge tracks a BOARD-fixed point (the board origin), which translates over the
     # ground at the board's travel speed -> a steady tangential slip -> SLIDING. The scene's
     # truth mode is now classified from that same board-fixed point (truth_mode_body="board"
-    # in mujoco_gen), so truth and observation agree on SLIDING. (The wheels' material point
-    # truly rolls, but that point is not tracked -- THEORY.md s.3: rolling vs sliding depends
+    # in oracle.factory), so truth and observation agree on SLIDING. (The wheels' material point
+    # truly rolls, but that point is not tracked -- THEORY.md §3: rolling vs sliding depends
     # on which material point you follow.) We accept ROLLING too for robustness, but assert
     # the edge is genuinely MOVING, not STATIC/FREE.
     bg_map = result.per_edge["board_ground"].map_state
@@ -216,30 +218,30 @@ def test_person_on_skateboard_both_edges_in_contact_static_rider_on_moving_deck(
 
 
 # --------------------------------------------------------------------------------------
-# box_on_two_blocks: the changing active set (THEORY.md s.8).
+# box_on_two_blocks: the changing active set (THEORY.md §8).
 # --------------------------------------------------------------------------------------
 
 
 def test_box_on_two_blocks_active_set_cardinality_drops_when_support_removed():
-    """The MAP active set drops from both edges to one when a support is removed (s.8).
+    """The MAP active set drops from both edges to one when a support is removed (§8).
 
-    The s.8 changing-active-set test: a plank bridges two blocks ({box_blockL, box_blockR}),
+    The §8 changing-active-set test: a plank bridges two blocks ({box_blockL, box_blockR}),
     then one support (blockR) is removed mid-run and the true active set becomes
     {box_blockL}. We assert the MAP active-set cardinality DROPS (2 -> 1) at a time within a
     tolerance window of the true structural change.
 
     The removal is genuinely OBSERVABLE: blockR rides a vertical slide joint and is decoupled
-    from the floor collision group (mujoco_gen._build_box_on_two_blocks), so when commanded
+    from the floor collision group (oracle._build_box_on_two_blocks), so when commanded
     down it descends the full ~0.30 m into the well below the deck -- opening a ~0.30 m gap on
     the box_blockR edge while the wide blockL holds the box level (the box stays put, the
     support leaves). That separation is three orders of magnitude above the mocap noise floor,
     so this runs at the DEFAULT noise level and the DEFAULT detector config -- no detuning.
     (An earlier version of the scene held blockR pinned against the floor so it could only
     sink sub-mm; that made the advertised structural change kinematically unobservable -- the
-    s.7 trap. The scene now physically realizes the separation it labels.)
+    §7 trap. The scene now physically realizes the separation it labels.)
     """
     # Realistic mocap noise (the scene default ~0.5 mm) -- the ~0.30 m separation dwarfs it.
-    scene = mujoco_gen.generate_scene("box_on_two_blocks", seed=SEED)
+    scene = oracle.generate_scene("box_on_two_blocks", seed=SEED)
 
     # Default detector config: no gap-emission tightening, no EM disabling. The separation is
     # large and unambiguous, so the stock detector recovers the structural change on its own.
@@ -271,7 +273,7 @@ def test_box_on_two_blocks_active_set_cardinality_drops_when_support_removed():
         f"MAP active set should be a SINGLE edge after the support is removed; got "
         f"cardinalities {sorted(set(card[late].tolist()))}"
     )
-    # The cardinality genuinely DROPS (the headline assertion of THEORY.md s.8).
+    # The cardinality genuinely DROPS (the headline assertion of THEORY.md §8).
     assert card[early].mean() > card[late].mean(), (
         "MAP active-set cardinality must drop across the support-removal event"
     )
@@ -280,7 +282,7 @@ def test_box_on_two_blocks_active_set_cardinality_drops_when_support_removed():
     map_drop = _first_drop_time(card, t, hi=2, lo_max=1)
     assert np.isfinite(map_drop), "the MAP active set must drop 2 -> 1 somewhere"
     # 0.2 s tolerance: the smoothed HMM realizes the structural switch a few frames after
-    # the guard (THEORY.md s.5: persistence delays the switch slightly), well within window.
+    # the guard (THEORY.md §5: persistence delays the switch slightly), well within window.
     assert abs(map_drop - true_drop) < 0.2, (
         f"MAP active-set drop at t={map_drop:.3f}s should be within 0.2 s of the true "
         f"structural change at t={true_drop:.3f}s"
@@ -288,7 +290,7 @@ def test_box_on_two_blocks_active_set_cardinality_drops_when_support_removed():
 
     # --- the SURVIVING edge (box_blockL) stays active throughout; box_blockR deactivates. -
     # box_blockL is in contact for the whole clip (it never loses load); box_blockR is the
-    # one whose existence flips off -- exactly the structure-inference signal of s.8.
+    # one whose existence flips off -- exactly the structure-inference signal of §8.
     score_L = report.score(result.per_edge["box_blockL"], scene.truth["box_blockL"])
     score_R = report.score(result.per_edge["box_blockR"], scene.truth["box_blockR"])
     assert score_L["contact_iou"] > 0.9, (

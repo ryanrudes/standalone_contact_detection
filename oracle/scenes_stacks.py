@@ -1,23 +1,23 @@
-"""Multi-body SCENES exercising stacking and multi-surface hand-off (THEORY.md s.8).
+"""Multi-body SCENES exercising stacking and multi-surface hand-off (THEORY.md §8).
 
-These are additional :data:`contact.mujoco_gen.SCENES`-style demos focused on the
+These are additional multi-body scene demos focused on the
 *contact graph* and, above all, on the **active set as the hidden structure** we infer
-(THEORY.md s.8). A single body pair has one edge; the interesting graph signal is
+(THEORY.md §8). A single body pair has one edge; the interesting graph signal is
 
 * several edges active *simultaneously* (a stack: each box rests on the one below), and
 * the active set *changing in time* (a box toppling off the top of a stack, or sliding
   off a table, going airborne, then landing on the floor -- a multi-surface hand-off).
 
 All three scenes are built with ONLY ``mujoco`` + ``numpy`` (plus the scene contract
-keys), so this module is import-safe for ``mujoco_gen`` to pull in at its end without an
+keys), registered via ``oracle.registry.scene`` (a leaf that imports nothing) without an
 import cycle: it imports no ``contact`` submodule. The simulate/label machinery in
-``mujoco_gen`` (``_simulate_scene`` / ``generate_scene`` / ``_edge_frame_truth``) does all
+``oracle.factory`` (``_simulate_scene`` / ``generate_scene`` / ``_edge_frame_truth``) does all
 the physics extraction; we only build the model + the build-dict.
 
 The mode of every active edge here is STATIC (resting boxes do not slide/roll relative to
 their support while seated) or, transiently, IMPACT (a falling box striking the floor): the
 point of these scenes is the *structure* (which edges are active and when), not per-edge
-mode richness -- exactly the structure-inference target of THEORY.md s.8.
+mode richness -- exactly the structure-inference target of THEORY.md §8.
 """
 
 from __future__ import annotations
@@ -28,8 +28,11 @@ import mujoco
 
 from ._mjcf import body_id as _bid, options as _common_options
 
-# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
-# (which imports this file at its end to register the builders) stays cycle-free.
+from oracle.registry import scene
+from oracle.specs import EdgeSpec, SceneSpec
+
+# Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
+# leaf the builders below self-register into — all cycle-free.
 
 
 # Shared box half-extent for the stacked boxes (m). Bottom-face center material point of a
@@ -41,13 +44,14 @@ _BOX_HALF = 0.06
 # Scene 1: a stable three-box stack -> several simultaneous STATIC edges.
 # --------------------------------------------------------------------------------------
 
+@scene("stacked_boxes")
 def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
-    """Three equal boxes stacked on the floor, resting stably (THEORY.md s.8).
+    """Three equal boxes stacked on the floor, resting stably (THEORY.md §8).
 
     Physics: box1 rests on the floor, box2 on box1, box3 on box2, all CoMs aligned over a
     wide common footprint with high friction. Gravity loads each interface; nothing slides
     or tips, so all three edges are sustained STATIC contacts with zero relative twist
-    (THEORY.md s.3). The point of the scene is the *graph*: three candidate edges that are
+    (THEORY.md §3). The point of the scene is the *graph*: three candidate edges that are
     all active at once for the whole run (a small but genuine simultaneous active set).
 
     Stability comes from (a) perfectly aligned centers of mass (each box directly above
@@ -93,61 +97,62 @@ def _build_stacked_boxes() -> tuple[mujoco.MjModel, dict]:
     model = mujoco.MjModel.from_xml_string(xml)
 
     n_up = np.array([0.0, 0.0, 1.0])
-    build = {
-        "bodies": ["box1", "box2", "box3"],
+    return SceneSpec(
+        model=model,
+        bodies=("box1", "box2", "box3"),
         # Let the stack settle into a quiet equilibrium before recording (the clock is
         # reset to 0 after settle), so the recorded window is pure sustained STATIC.
-        "settle": 0.5,
-        "duration": 1.5,
-        "edges": [
-            {
-                "edge_id": "box1_floor",
-                "moving_body": "box1",
-                "support_body": "world",
-                "moving_geoms": ["box1g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),   # box1 bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box2_box1",
-                "moving_body": "box2",
-                "support_body": "box1",
-                "moving_geoms": ["box2g"],
-                "support_geoms": ["box1g"],
-                "surface_point_local": np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),   # box2 bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box3_box2",
-                "moving_body": "box3",
-                "support_body": "box2",
-                "moving_geoms": ["box3g"],
-                "support_geoms": ["box2g"],
-                "surface_point_local": np.array([0.0, 0.0, h]),    # box2 TOP face (box2-local)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),   # box3 bottom-face center
-                "shape": "box",
-            },
-        ],
-        "meta": {
+        settle=0.5,
+        duration=1.5,
+        edges=(
+            EdgeSpec(
+                edge_id="box1_floor",
+                moving_body="box1",
+                support_body="world",
+                moving_geoms=("box1g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),   # box1 bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box2_box1",
+                moving_body="box2",
+                support_body="box1",
+                moving_geoms=("box2g",),
+                support_geoms=("box1g",),
+                surface_point_local=np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),   # box2 bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box3_box2",
+                moving_body="box3",
+                support_body="box2",
+                moving_geoms=("box3g",),
+                support_geoms=("box2g",),
+                surface_point_local=np.array([0.0, 0.0, h]),    # box2 TOP face (box2-local)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),   # box3 bottom-face center
+                shape="box",
+            ),
+        ),
+        meta={
             "structure": (
                 "All three edges active simultaneously for the whole run: a stable "
-                "STATIC stack (THEORY.md s.8 -- a small fixed active set over the graph)."
+                "STATIC stack (THEORY.md §8 -- a small fixed active set over the graph)."
             ),
         },
-    }
-    return model, build
+    )
 
 
 # --------------------------------------------------------------------------------------
 # Scene 2: a small stack whose TOP box is pushed off -> a CHANGING active set + impact.
 # --------------------------------------------------------------------------------------
 
+@scene("stack_topple")
 def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
     """A 2-box stack whose TOP slab is shoved off, slides off the edge, and hits the floor.
 
@@ -155,7 +160,7 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
     both STATIC. After a settle, a sustained horizontal world force (``xfrc_applied``) on
     the TOP slab overcomes friction and walks it off the edge of box1; once its CoM passes
     box1's edge it slides off, deactivating the ``box2_box1`` edge, free-falls (FREE), and
-    strikes the floor -- an IMPACT on the new ``box2_floor`` edge (THEORY.md s.6) -- then
+    strikes the floor -- an IMPACT on the new ``box2_floor`` edge (THEORY.md §6) -- then
     settles flat (STATIC). box1 is heavy and stays put, so ``box1_floor`` is STATIC
     throughout.
 
@@ -167,11 +172,11 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
     forever (the detector cannot confirm the landing even though MuJoCo's geom truth sees
     it). A flat, tip-resistant slab pushed just hard enough to clear the edge slides off
     TRANSLATING and lands flat on its large bottom face, so the tracked point stays the
-    contact point and the landing is cleanly observable (THEORY.md s.3: rolling/landing is
+    contact point and the landing is cleanly observable (THEORY.md §3: rolling/landing is
     a property of the tracked material point). This keeps the demo's named phenomenon -- a
     CHANGING active set with a landing impact -- both true AND detectable.
 
-    This is the changing-active-set test of THEORY.md s.8: the true active structure goes
+    This is the changing-active-set test of THEORY.md §8: the true active structure goes
     ``{box1_floor, box2_box1}`` -> (box2 airborne) ``{box1_floor}`` -> (box2 landed)
     ``{box1_floor, box2_floor}``. box1's heavy mass + the floor-level box1 keep the lower
     interface a clean sustained STATIC contact while box2's edges flip.
@@ -227,61 +232,62 @@ def _build_stack_topple() -> tuple[mujoco.MjModel, dict]:
             d.xfrc_applied[box2_id, 0] = 0.8 * weight2
 
     n_up = np.array([0.0, 0.0, 1.0])
-    build = {
-        "bodies": ["box1", "box2"],
-        "settle": 0.4,
-        "duration": 2.0,
-        "forcing": forcing,
-        "edges": [
-            {
-                "edge_id": "box1_floor",
-                "moving_body": "box1",
-                "support_body": "world",
-                "moving_geoms": ["box1g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -h]),
-                "shape": "box",
-            },
-            {
-                "edge_id": "box2_box1",
-                "moving_body": "box2",
-                "support_body": "box1",
-                "moving_geoms": ["box2g"],
-                "support_geoms": ["box1g"],
-                "surface_point_local": np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),  # slab bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box2_floor",
-                "moving_body": "box2",
-                "support_body": "world",
-                "moving_geoms": ["box2g"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),  # slab bottom-face center
-                "shape": "box",
-            },
-        ],
-        "meta": {
+    return SceneSpec(
+        model=model,
+        bodies=("box1", "box2"),
+        settle=0.4,
+        duration=2.0,
+        forcing=forcing,
+        edges=(
+            EdgeSpec(
+                edge_id="box1_floor",
+                moving_body="box1",
+                support_body="world",
+                moving_geoms=("box1g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -h]),
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box2_box1",
+                moving_body="box2",
+                support_body="box1",
+                moving_geoms=("box2g",),
+                support_geoms=("box1g",),
+                surface_point_local=np.array([0.0, 0.0, h]),    # box1 TOP face (box1-local)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),  # slab bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box2_floor",
+                moving_body="box2",
+                support_body="world",
+                moving_geoms=("box2g",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),  # slab bottom-face center
+                shape="box",
+            ),
+        ),
+        meta={
             "active_set_change": (
                 "{box1_floor, box2_box1} -> {box1_floor} (box2 airborne) -> "
                 "{box1_floor, box2_floor} (box2 lands, an impact). box1 stays put "
-                "(THEORY.md s.8 changing active set + s.6 impact)."
+                "(THEORY.md §8 changing active set + §6 impact)."
             ),
         },
-    }
-    return model, build
+    )
 
 
 # --------------------------------------------------------------------------------------
 # Scene 3 (showcase): a box slides off a table, falls, and lands on the floor.
 # --------------------------------------------------------------------------------------
 
+@scene("box_off_table")
 def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     """A flat slab on a raised TABLE is pushed off the edge, falls, and lands FLAT on the FLOOR.
 
@@ -289,7 +295,7 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     settle a steady horizontal world force overcomes friction and slides the slab toward the
     table edge; once its CoM clears the edge it slides off, free-falls (FREE), and lands on
     the floor below -- a sustained STATIC contact after the landing transient. This is the
-    showcase MULTI-SURFACE hand-off of THEORY.md s.8: the SAME moving body's active edge
+    showcase MULTI-SURFACE hand-off of THEORY.md §8: the SAME moving body's active edge
     migrates from one support to another, with an airborne gap in between, so the active
     set is ``{box_table} -> {} -> {box_floor}``.
 
@@ -302,7 +308,7 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
     settles to the documented sustained STATIC. A flat, tip-resistant slab pushed just hard
     enough to clear the edge slides off TRANSLATING and lands FLAT on its large bottom face, so
     the tracked point stays the contact point: ``box_floor`` activates with a short landing
-    transient and then a single sustained STATIC interval (THEORY.md s.3: landing flat is a
+    transient and then a single sustained STATIC interval (THEORY.md §3: landing flat is a
     property of the tracked material point). This keeps the named phenomenon -- a clean
     multi-surface hand-off ending in a flat rest -- both true AND detectable.
 
@@ -365,57 +371,44 @@ def _build_box_off_table() -> tuple[mujoco.MjModel, dict]:
             d.xfrc_applied[box_id, 0] = 0.8 * weight
 
     n_up = np.array([0.0, 0.0, 1.0])
-    build = {
-        "bodies": ["box", "table"],
-        "settle": 0.3,
-        "duration": 2.2,
-        "forcing": forcing,
-        "edges": [
-            {
-                "edge_id": "box_table",
-                "moving_body": "box",
-                "support_body": "table",
-                "moving_geoms": ["boxg"],
-                "support_geoms": ["tableg"],
+    return SceneSpec(
+        model=model,
+        bodies=("box", "table"),
+        settle=0.3,
+        duration=2.2,
+        forcing=forcing,
+        edges=(
+            EdgeSpec(
+                edge_id="box_table",
+                moving_body="box",
+                support_body="table",
+                moving_geoms=("boxg",),
+                support_geoms=("tableg",),
                 # Table TOP face, in the TABLE-local frame (origin at table center).
-                "surface_point_local": np.array([0.0, 0.0, table_half[2]]),
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),  # slab bottom-face center
-                "shape": "box",
-            },
-            {
-                "edge_id": "box_floor",
-                "moving_body": "box",
-                "support_body": "world",
-                "moving_geoms": ["boxg"],
-                "support_geoms": ["floor"],
-                "surface_point_local": np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
-                "surface_normal_local": n_up,
-                "contact_point_local": np.array([0.0, 0.0, -sz]),   # slab bottom-face center
-                "shape": "box",
-            },
-        ],
-        "meta": {
+                surface_point_local=np.array([0.0, 0.0, table_half[2]]),
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),  # slab bottom-face center
+                shape="box",
+            ),
+            EdgeSpec(
+                edge_id="box_floor",
+                moving_body="box",
+                support_body="world",
+                moving_geoms=("boxg",),
+                support_geoms=("floor",),
+                surface_point_local=np.array([0.0, 0.0, 0.0]),  # floor z=0 (world)
+                surface_normal_local=n_up,
+                contact_point_local=np.array([0.0, 0.0, -sz]),   # slab bottom-face center
+                shape="box",
+            ),
+        ),
+        meta={
             "hand_off": (
                 "{box_table} -> {} (airborne) -> {box_floor}: a multi-surface hand-off "
-                "of the same body across an airborne gap (THEORY.md s.8). The table top "
+                "of the same body across an airborne gap (THEORY.md §8). The table top "
                 "is 0.30 m up so the fall is long and the active-set change is decisive."
             ),
         },
-    }
-    return model, build
+    )
 
 
-# --------------------------------------------------------------------------------------
-# Registries (the contract: module-level SCENARIO_BUILDERS and SCENE_BUILDERS).
-# --------------------------------------------------------------------------------------
-
-#: No single-pair scenarios in this module.
-SCENARIO_BUILDERS: dict[str, callable] = {}
-
-#: Multi-body scenes: stacking + multi-surface hand-off (THEORY.md s.8).
-SCENE_BUILDERS: dict[str, callable] = {
-    "stacked_boxes": _build_stacked_boxes,
-    "stack_topple": _build_stack_topple,
-    "box_off_table": _build_box_off_table,
-}

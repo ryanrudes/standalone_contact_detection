@@ -1,8 +1,8 @@
-"""Executable derivation for the emission channel densities (THEORY.md sections 3 & 4).
+"""Executable derivation for the emission channel densities (THEORY.md §3 & §4).
 
 Each contact mode in ``contact.emissions`` is a composition of the encapsulated ``Density``
 objects; this test verifies, WITHOUT running the detector, the two load-bearing properties
-those densities must have for the cross-state likelihood ratio of section 4 to stay
+those densities must have for the cross-state likelihood ratio of §4 to stay
 calibrated: (a) each is a PROPER density (integrates to 1 over its support), and (b) the
 documented limit laws hold (e.g. the sliding ring collapses to the isotropic Gaussian as
 speed -> 0). This turns the modules' prose normalization/limit claims into checks.

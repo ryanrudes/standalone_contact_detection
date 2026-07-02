@@ -32,12 +32,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 pytest.importorskip("mujoco")  # scenarios/scenes come from the MuJoCo harness; skip cleanly if absent
 
-import contact.mujoco_gen as mujoco_gen  # noqa: E402
+import oracle  # noqa: E402
 from contact import observe  # noqa: E402
 from contact.config import DetectorConfig  # noqa: E402
 from contact.geometry_resolvers import BoxPlane, FlatRegion, SphereSphere  # noqa: E402
 from contact.graph import _resolve_support  # noqa: E402
-from contact.model import ContactDetector  # noqa: E402
+from contact.detector import ContactDetector  # noqa: E402
 from contact.types import IMPACT, PoseTrajectory  # noqa: E402
 
 # --------------------------------------------------------------------------------------
@@ -49,7 +49,7 @@ VST = DetectorConfig().vel_smooth_time
 
 def _scene_edge(scene_name: str, edge_id: str):
     """(moving pose, resolved support pose, edge) for one edge of a freshly-generated scene."""
-    scene = mujoco_gen.generate_scene(scene_name)
+    scene = oracle.generate_scene(scene_name)
     edge = next(e for e in scene.edges if e.edge_id == edge_id)
     moving = scene.bodies[edge.moving_body]
     support = _resolve_support(scene, edge.support_body, moving)
@@ -73,7 +73,7 @@ class TestFlatRegionFloor:
         FlatRegion *is* the configuration of today's ``(surface, contact_point_local)`` spec, so
         it must reproduce the default ``observe`` arithmetic bit-for-bit on every channel -- the
         regression lock guaranteeing the validated kinematic/flat-floor path is untouched."""
-        raw = mujoco_gen.generate("drop_rest")
+        raw = oracle.generate("drop_rest")
         default = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local, VST)
         flat = observe(
             raw.moving, raw.support, raw.surface, raw.contact_point_local, VST,
@@ -165,7 +165,7 @@ class TestSphereSphere:
 class TestBoxPlane:
     def _tumbling(self):
         """The tumbling box resolved both ways: the FlatRegion floor and the BoxPlane resolver."""
-        raw = mujoco_gen.generate("tumbling_box")
+        raw = oracle.generate("tumbling_box")
         flat = observe(raw.moving, raw.support, raw.surface, raw.contact_point_local, VST)
         box = observe(
             raw.moving, raw.support, raw.surface, raw.contact_point_local, VST,

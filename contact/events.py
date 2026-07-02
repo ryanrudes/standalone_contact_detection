@@ -1,9 +1,9 @@
-"""Make/break contact event detection (THEORY.md section 6).
+"""Make/break contact event detection (THEORY.md §6).
 
-The sustained-contact posterior (sections 4-5) tells us *that* a contact existed
+The sustained-contact posterior (§4-§5) tells us *that* a contact existed
 over some span of frames, but it pins the *instant* of touchdown / liftoff only to
 within the resolution of the discrete state estimate -- which is exactly the part
-that matters least for "am I touching?" and most for timing. THEORY.md section 6
+that matters least for "am I touching?" and most for timing. THEORY.md §6
 argues that the make/break instants are singular: they are the guards/resets of the
 hybrid system, where the relative normal velocity is arrested (touchdown) or first
 allowed to grow (liftoff), and where the gap crosses zero. The *kinematics near the
@@ -20,7 +20,7 @@ kinematics straddling the boundary:
   actually crosses zero in the local window (noisy / already-resting data) we fall
   back to the zero-crossing of the relative normal velocity ``v_normal`` -- the
   moment the closing motion is arrested (``v_normal`` rising through 0 from the
-  approaching, negative side), which section 6 calls out as the precise event timer.
+  approaching, negative side), which §6 calls out as the precise event timer.
 * **liftoff** (contact -> free): the contact starts separating. The gap reopens
   (``gap`` crosses zero going positive) and/or ``v_normal`` becomes persistently
   positive. We interpolate the gap zero-crossing, falling back to the ``v_normal``
@@ -40,7 +40,7 @@ import numpy as np
 
 from .types import ContactEvent, ContactObservations
 
-# ``contact.signals`` is a leaf helper module (THEORY.md section 6: events should be
+# ``contact.signals`` is a leaf helper module (THEORY.md §6: events should be
 # detected on a *lightly*-filtered signal, with smoothing kept local so it does not
 # erase the very jumps we are timing). We use it opportunistically for a gentle
 # pre-smooth of v_normal when present, but never hard-depend on it: the refinement
@@ -61,7 +61,7 @@ __all__ = ["detect_events"]
 def _as_obs(obs: ContactObservations) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Pull the (t, gap, v_normal) channels we need as float arrays.
 
-    THEORY.md section 6: the gap zero-crossing locates the geometric meeting; the
+    THEORY.md §6: the gap zero-crossing locates the geometric meeting; the
     relative-normal-velocity sign change locates the arrest/separation. Those two
     channels are all the kinematics the event refinement consumes.
     """
@@ -112,7 +112,7 @@ def _zero_crossing_frac_index(
       * ``None``  -> either direction (first sign change of any kind).
 
     Returns ``None`` if there is no qualifying crossing in the span -- the caller then
-    falls back to the other channel. (THEORY.md section 6: the gap crossing is the
+    falls back to the other channel. (THEORY.md §6: the gap crossing is the
     primary timer; v_normal's arrest/onset is the principled fallback.)
     """
     lo = max(0, lo)
@@ -144,7 +144,7 @@ def _zero_crossing_frac_index(
 def _smooth_v_normal(t: np.ndarray, v_normal: np.ndarray) -> np.ndarray:
     """Lightly pre-smooth v_normal for the sign-change fallback, if signals allows.
 
-    THEORY.md section 6 insists smoothing here be *local* so it never erases the jump
+    THEORY.md §6 insists smoothing here be *local* so it never erases the jump
     we are timing. If ``contact.signals`` exposes a smoothing helper we use it with a
     short time constant; otherwise we return the raw channel unchanged (the gap-based
     primary path is unaffected either way).
@@ -181,7 +181,7 @@ def _refine_transition(
     the search by one frame on each side to tolerate sampling jitter, then:
 
       * touchdown: locate the gap *falling* through zero (bodies meeting). Fallback:
-        v_normal *rising* through zero (the closing motion arrested) -- section 6.
+        v_normal *rising* through zero (the closing motion arrested) -- §6.
       * liftoff: locate the gap *rising* through zero (gap reopening). Fallback:
         v_normal *rising* through zero (motion turns to separation).
 
@@ -220,7 +220,7 @@ def detect_events(
     in_contact: np.ndarray,
     t: np.ndarray | None = None,
 ) -> list[ContactEvent]:
-    """Detect and sub-frame-refine touchdown/liftoff events (THEORY.md section 6).
+    """Detect and sub-frame-refine touchdown/liftoff events (THEORY.md §6).
 
     Find every free->contact (touchdown) and contact->free (liftoff) transition in the
     boolean ``in_contact`` mask, then refine each event's *time* using the kinematics
@@ -239,10 +239,10 @@ def detect_events(
     ----------
     obs:
         Per-frame support-relative observations; only ``obs.t``, ``obs.gap`` and
-        ``obs.v_normal`` are consumed (THEORY.md sections 1 & 6).
+        ``obs.v_normal`` are consumed (THEORY.md §1 & §6).
     in_contact:
         ``(T,)`` boolean contact mask (typically ``DetectionResult.in_contact`` from
-        the Viterbi segmentation of section 5).
+        the Viterbi segmentation of §5).
     t:
         Optional ``(T,)`` time base overriding ``obs.t`` (e.g. a resampled grid). When
         ``None`` (default) the timestamps in ``obs`` are used.
@@ -263,7 +263,7 @@ def detect_events(
     if n < 2 or time_base.shape[0] < 2:
         return []
 
-    # Light local smoothing of the fallback channel only (section 6: keep it local).
+    # Light local smoothing of the fallback channel only (§6: keep it local).
     v_for_fallback = _smooth_v_normal(time_base, v_normal)
 
     # A transition happens at frame i (1 <= i <= n-1) when mask[i] != mask[i-1]; frame i

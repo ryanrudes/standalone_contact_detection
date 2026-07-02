@@ -1,6 +1,6 @@
 """Shared MuJoCo scene-construction helpers for the truth factory and the demo builders.
 
-A dependency-light leaf (``mujoco`` only) so both :mod:`contact.mujoco_gen` and the
+A dependency-light leaf (``mujoco`` only) so both :mod:`oracle.factory` and the
 ``contact.demos_*`` builders it imports at the end can share these without an import cycle.
 It replaces the byte-identical per-file copies that the old "self-contained, no
 cross-import" rule used to force into every builder module.
@@ -15,7 +15,7 @@ def options() -> str:
     """The MuJoCo ``<option>`` block shared by every scenario / scene / demo.
 
     Gravity -9.81 z, a fine 0.0005 s timestep (keeps a near-discontinuous impact crisp
-    rather than smeared across frames, THEORY.md s.6), implicitfast integration, and a
+    rather than smeared across frames, THEORY.md §6), implicitfast integration, and a
     pyramidal friction cone (matching the rest of the package).
     """
     return (

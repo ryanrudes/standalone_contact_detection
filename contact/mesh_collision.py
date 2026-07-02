@@ -24,7 +24,6 @@ Clouds arrive already world-placed; this module only ever sees vertex clouds and
 
 from __future__ import annotations
 
-import coal
 import numpy as np
 
 __all__ = ["convex_plane", "gjk_distance"]
@@ -79,6 +78,8 @@ def convex_plane(
 
 def _hull(verts: np.ndarray):
     """A coal ``Convex`` hull from an ``(V, 3)`` world-frame vertex cloud."""
+    import coal  # local import: the collision backend loads only when a mesh query runs
+
     pts = coal.StdVec_Vec3s()
     for v in np.asarray(verts, dtype=float):
         pts.append(v)
@@ -119,6 +120,8 @@ def gjk_distance(
         * ``normal`` -- world unit ``support -> moving`` normal (from hull ``B`` to hull ``A``),
           oriented by the inter-centroid direction. Position-derived -- no body-fixed spin.
     """
+    import coal  # local import: the collision backend loads only when a mesh query runs
+
     vA = np.asarray(vA_world, dtype=float)
     vB = np.asarray(vB_world, dtype=float)
     req = coal.DistanceRequest()

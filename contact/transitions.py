@@ -1,22 +1,22 @@
-"""State-dependent (gap-gated) HMM transition tensors -- the hybrid guards of s.5.
+"""State-dependent (gap-gated) HMM transition tensors -- the hybrid guards of §5.
 
-THEORY.md section 5 says the HMM is the *discrete shadow* of a hybrid dynamical
+THEORY.md §5 says the HMM is the *discrete shadow* of a hybrid dynamical
 system: continuous flows inside a mode, punctuated by discrete jumps at *guards*.
 A plain time-homogeneous transition matrix captures only "the tendency to
-persist." But s.5 hands us a sharper, free, refinement:
+persist." But §5 hands us a sharper, free, refinement:
 
   > Because the guards are *state-dependent*, the transition prior should be too:
   > the probability of free->contact should rise as the gap approaches zero, which
   > is strictly more informative than a constant switch probability.
 
 The free->contact guard is precisely the geometric zero-crossing ``g -> 0`` of
-s.2/s.5. So this module builds two objects:
+§2/§5. So this module builds two objects:
 
 * :func:`base_transition_matrix` -- the time-homogeneous ``(S, S)`` continuous-time
   Markov jump discretized per frame (``P(stay) = exp(-dt / dwell)``), with the
   off-diagonal mass split along the hybrid-system's guard structure (FREE is the
   gateway, IMPACT bridges free<->sustained, sustained modes mostly break to FREE).
-  This is the baseline temporal prior of s.5.
+  This is the baseline temporal prior of §5.
 
 * :func:`gated_transition_tensor` -- the per-frame ``(T, S, S)`` upgrade in which
   the FREE->contact mass is *gated* by gap proximity: a logistic gate ``g(t)`` that
@@ -27,9 +27,9 @@ s.2/s.5. So this module builds two objects:
 Both are built in probability space (small, directly-interpretable stochastic
 matrices) and returned in probability space. The HMM (``contact.hmm``) takes their
 *log*; every entry is kept strictly positive by a small floor so the log is finite
-and the smoother can always recover from a surprising frame (s.4 -- comparisons must
+and the smoother can always recover from a surprising frame (§4 -- comparisons must
 stay in valid log-space, never -inf). Every row sums to 1, so likelihoods across
-states remain properly normalized and comparable (s.4).
+states remain properly normalized and comparable (§4).
 
 The ``(T, S, S)`` tensor is consumed directly by ``contact.hmm.forward_backward``
 and ``contact.hmm.viterbi``, which already accept time-varying transitions where
@@ -54,7 +54,7 @@ __all__ = ["base_transition_matrix", "gated_transition_tensor"]
 
 # A small floor on every transition propensity. It keeps the matrix strictly
 # positive so log-space has no -inf (the HMM must always be able to leave any state,
-# however unlikely; THEORY.md s.4 keeps everything in valid, finite log-space).
+# however unlikely; THEORY.md §4 keeps everything in valid, finite log-space).
 _FLOOR = 0.02
 
 
@@ -63,7 +63,7 @@ def base_transition_matrix(
 ) -> np.ndarray:
     """Time-homogeneous transition matrix ``P[i, j] = P(state_{t+1}=j | state_t=i)``.
 
-    THEORY.md s.5: a contact does not flicker on and off, so the temporal prior is
+    THEORY.md §5: a contact does not flicker on and off, so the temporal prior is
     "the tendency to persist." We model each state as a continuous-time Markov *jump
     process* with mean dwell ``tau``; over a step of length ``dt`` the survival
     probability of staying put is the exponential survival of that jump,
@@ -76,22 +76,22 @@ def base_transition_matrix(
 
       * **FREE is the gateway.** A sustained contact mode (static/sliding/pivoting/
         rolling) leaves almost entirely back to FREE (the break guard ``lambda -> 0``
-        of s.5), and FREE re-enters contact preferentially through the short-lived
-        IMPACT transient (free -> impact -> established, the make guard of s.6) rather
+        of §5), and FREE re-enters contact preferentially through the short-lived
+        IMPACT transient (free -> impact -> established, the make guard of §6) rather
         than landing directly in a sustained mode.
-      * **IMPACT is a fast transient.** s.6 places impact "at a finer timescale than
+      * **IMPACT is a fast transient.** §6 places impact "at a finer timescale than
         the sustained modes," so it dwells *shorter* -- ``params.impact_dwell_time``
         instead of ``params.mean_dwell_time`` -- and when it jumps it overwhelmingly
         *establishes* a sustained contact mode (the touch "takes") or falls back to
         FREE (it did not). It never hops to another transient.
       * **Sustained <-> sustained switches** (e.g. static <-> sliding at the
-        friction-cone stick->slip guard, s.7) are allowed but kept modest -- such
+        friction-cone stick->slip guard, §7) are allowed but kept modest -- such
         mid-contact mode changes happen, but persistence and release are more likely.
 
     The weights below are deliberately round numbers, not tuned to any scenario;
     they set only the *relative* propensity of each jump, and each row is renormalized
     so the off-diagonal mass sums to exactly ``1 - P(stay)``. Every entry is at least
-    ``_FLOOR`` of the jump mass so ``log(P)`` is finite everywhere (s.4).
+    ``_FLOOR`` of the jump mass so ``log(P)`` is finite everywhere (§4).
 
     Parameters
     ----------
@@ -116,7 +116,7 @@ def base_transition_matrix(
     tau = max(float(params.mean_dwell_time), 1e-6)
     tau_impact = max(float(params.impact_dwell_time), 1e-6)
 
-    # Per-state dwell: IMPACT is a brief transient (finer timescale, s.6), so it uses
+    # Per-state dwell: IMPACT is a brief transient (finer timescale, §6), so it uses
     # the short ``impact_dwell_time``; every other state uses the baseline ``tau``.
     dwell = {name: tau for name in states}
     if IMPACT in idx:
@@ -130,12 +130,12 @@ def base_transition_matrix(
 
         These are relative weights only; the diagonal (stay) is set separately from
         ``exp(-dt / dwell)``. The ``_FLOOR`` baseline guarantees every off-diagonal
-        entry is strictly positive (no -inf in log-space, s.4).
+        entry is strictly positive (no -inf in log-space, §4).
         """
         w = np.full(S, _FLOOR, dtype=float)
         if src == FREE:
             # FREE re-enters contact mainly through the IMPACT transient (the make
-            # guard of s.6); a direct jump straight to a sustained mode is possible
+            # guard of §6); a direct jump straight to a sustained mode is possible
             # but minor (a body can already be resting when the record starts).
             if IMPACT in idx:
                 w[idx[IMPACT]] = 1.0
@@ -152,15 +152,15 @@ def base_transition_matrix(
                 w[idx[FREE]] = 0.6
         else:
             # A sustained mode mostly breaks back to FREE (the lambda -> 0 break
-            # guard, s.5); mode<->mode switches (static<->sliding at the friction-cone
-            # guard, s.7) are allowed but rarer than persistence or release.
+            # guard, §5); mode<->mode switches (static<->sliding at the friction-cone
+            # guard, §7) are allowed but rarer than persistence or release.
             if FREE in idx:
                 w[idx[FREE]] = 1.0
             for m in sustained:
                 if m in idx and m != src:
                     w[idx[m]] = 0.25
             if IMPACT in idx:
-                # A break can momentarily look like an impact (the reset map, s.6).
+                # A break can momentarily look like an impact (the reset map, §6).
                 w[idx[IMPACT]] = 0.20
         w[idx[src]] = 0.0  # stay mass is the diagonal, handled below -- not a "jump"
         return w
@@ -168,7 +168,7 @@ def base_transition_matrix(
     P = np.zeros((S, S), dtype=float)
     for src in states:
         i = idx[src]
-        stay = float(np.exp(-dt / dwell[src]))  # CT-Markov survival over dt (s.5)
+        stay = float(np.exp(-dt / dwell[src]))  # CT-Markov survival over dt (§5)
         P[i, i] = stay
         w = jump_weights(src)
         total = float(w.sum())
@@ -197,7 +197,7 @@ def gated_transition_tensor(
 ) -> np.ndarray:
     """Per-frame ``(T, S, S)`` transitions with the FREE->contact entry *gap-gated*.
 
-    THEORY.md s.5: the free->contact guard is the geometric zero-crossing ``g -> 0``,
+    THEORY.md §5: the free->contact guard is the geometric zero-crossing ``g -> 0``,
     so the transition prior should be state-dependent -- the chance of *entering*
     contact must rise as the gap closes and vanish when the body is far above the
     surface. We start from the time-homogeneous :func:`base_transition_matrix` and, at
@@ -223,22 +223,22 @@ def gated_transition_tensor(
         the base one (IMPACT-led, per the make guard), so we only modulate the total
         entry probability, never which mode is entered. A small ``_FLOOR``-scaled
         residual is retained on each contact entry even when the gate is shut, so the
-        FREE row stays strictly positive (finite log, s.4) and a genuinely surprising
+        FREE row stays strictly positive (finite log, §4) and a genuinely surprising
         touchdown is never made literally impossible.
       * **All other rows are frame-independent** -- copied straight from the base
         matrix. Contact->contact and contact->free are governed by the *force* break
         guard (``lambda -> 0``), not by the gap proximity gate, so they are left exactly
-        as :func:`base_transition_matrix` set them (s.5).
+        as :func:`base_transition_matrix` set them (§5).
 
     Each row is renormalized to sum to 1 every frame, keeping cross-state likelihood
-    comparisons valid in log-space (s.4). The result is a ``(T, S, S)`` stack where
+    comparisons valid in log-space (§4). The result is a ``(T, S, S)`` stack where
     ``[t]`` is the transition from step ``t`` to ``t+1`` -- exactly the layout
     ``contact.hmm.forward_backward`` / ``contact.hmm.viterbi`` consume.
 
     Parameters
     ----------
     obs:
-        Support-relative observations; only ``obs.gap`` (the signed distance, s.1) is
+        Support-relative observations; only ``obs.gap`` (the signed distance, §1) is
         used here to evaluate the gate.
     states:
         State ordering; rows and columns follow this order.
@@ -279,7 +279,7 @@ def gated_transition_tensor(
     if contact_cols.size == 0:
         return np.broadcast_to(base, (T, S, S)).copy()
 
-    # --- The logistic gap gate g(t) in [0, 1] (s.5 hybrid guard) --------------------
+    # --- The logistic gap gate g(t) in [0, 1] (§5 hybrid guard) --------------------
     # g(t) = sigmoid((gap_gate - gap) / softness): ~0 far above the surface
     # (gap >> gap_gate), ~1 once gap has fallen within gap_gate. Softness sets the
     # sharpness. Computed with a numerically-stable sigmoid (no overflow for large |z|).
@@ -304,7 +304,7 @@ def gated_transition_tensor(
 
     # A floor so the gated-shut FREE row keeps a sliver of contact-entry mass: even
     # with the gate fully closed, a surprising touchdown stays *possible* (finite log,
-    # s.4). This is a small fraction of the base entry mass, not of the whole row.
+    # §4). This is a small fraction of the base entry mass, not of the whole row.
     floor_frac = _FLOOR
 
     # --- Build the (T, S, S) stack --------------------------------------------------
@@ -319,7 +319,7 @@ def gated_transition_tensor(
         row = np.empty(S, dtype=float)
         row[free_i] = base_free_diag + returned
         row[contact_cols] = offered * contact_shape
-        # Renormalize defensively so the FREE row sums to exactly 1 (s.4).
+        # Renormalize defensively so the FREE row sums to exactly 1 (§4).
         row /= row.sum()
         tensor[t, free_i] = row
     return tensor

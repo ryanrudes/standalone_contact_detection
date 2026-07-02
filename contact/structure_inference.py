@@ -1,10 +1,10 @@
-"""Scalable posterior over the active-set sequence of a contact graph (THEORY.md s.8).
+"""Scalable posterior over the active-set sequence of a contact graph (THEORY.md §8).
 
-THEORY.md section 8 makes "richer contact information" precise: the hidden thing we
+THEORY.md §8 makes "richer contact information" precise: the hidden thing we
 infer over a contact graph is not a bit but a *structure* -- **which set of edges is
-simultaneously active**, over time, as a Bayesian posterior. Section 8 also names the
+simultaneously active**, over time, as a Bayesian posterior. §8 also names the
 tractability fork explicitly: inference is "an HMM/particle filter over the discrete
-structure", and section 10 spells out the consequence -- exact ``2**E`` enumeration is
+structure", and §10 spells out the consequence -- exact ``2**E`` enumeration is
 the correct, preferred choice for the small graphs the package ships with, but large
 ``E`` is exponential and needs a sampling method that never materializes the ``2**E``
 alphabet.
@@ -29,7 +29,7 @@ as :mod:`contact.hmm` is a contact-free HMM):
 The temporal model
 ------------------
 Both estimators use the **same** structure-level temporal prior, the one
-:mod:`contact.graph` uses (THEORY.md s.5 lifted to the structure level, s.8): a Markov
+:mod:`contact.graph` uses (THEORY.md §5 lifted to the structure level, §8): a Markov
 chain on the subset alphabet with self-stay probability ``p_stay = exp(log_dwell_stay)``
 and the remaining mass ``1 - p_stay`` split *uniformly* over the other ``2**E - 1``
 subsets. Using the identical model on both sides is what lets the particle filter match
@@ -44,7 +44,7 @@ The evidence
 Both take ``log_evidence`` of shape ``(T, E, 2)``: ``log_evidence[t, e, 0]`` is the
 per-frame log-likelihood that edge ``e`` is *inactive* and ``[t, e, 1]`` that it is
 *active*. Edges are treated as conditionally independent given the active set (they
-observe disjoint body-pairs, THEORY.md s.4/s.8), so a subset's emission log-likelihood is
+observe disjoint body-pairs, THEORY.md §4/§8), so a subset's emission log-likelihood is
 the per-edge sum -- exactly :mod:`contact.graph`'s factorization, but here abstracted away
 from contacts. The two columns need not be normalized; only their *difference* (the
 log-evidence ratio active-vs-inactive) affects the posterior, since a common per-edge
@@ -68,7 +68,7 @@ __all__ = ["exact_active_sets", "particle_filter_active_sets", "StructurePosteri
 
 # Clip the dwell self-stay probability strictly inside (0, 1). A p_stay of exactly 1 makes
 # the chain reducible (it can never switch sets) and exactly 0 forbids persistence; both
-# break the log-transition and the proposal. THEORY.md s.5: the temporal prior is *soft*.
+# break the log-transition and the proposal. THEORY.md §5: the temporal prior is *soft*.
 _P_EPS = 1e-9
 
 
@@ -93,7 +93,7 @@ def _validate_evidence(log_evidence: np.ndarray) -> tuple[np.ndarray, int, int]:
 def _p_stay(log_dwell_stay: float) -> float:
     """The self-stay probability ``exp(log_dwell_stay)``, clipped into ``(0, 1)``.
 
-    ``log_dwell_stay`` is the log self-transition probability (THEORY.md s.5: the
+    ``log_dwell_stay`` is the log self-transition probability (THEORY.md §5: the
     discretized continuous-time Markov jump gives ``p_stay = exp(-dt/dwell)``, whose log is
     a natural log-domain knob). Clipped off the endpoints so the chain stays irreducible.
     """
@@ -104,7 +104,7 @@ def _p_stay(log_dwell_stay: float) -> float:
 def _subset_log_transition(n_subsets: int, p_stay: float) -> np.ndarray:
     """``(2**E, 2**E)`` log-transition: self-stay ``p_stay``, rest uniform over the others.
 
-    The structure-level temporal prior of THEORY.md s.5 (lifted to s.8), identical to
+    The structure-level temporal prior of THEORY.md §5 (lifted to §8), identical to
     :func:`contact.graph._subset_log_transition`::
 
         P(k -> k)  = p_stay
@@ -124,7 +124,7 @@ def _subset_log_transition(n_subsets: int, p_stay: float) -> np.ndarray:
 
 
 # ======================================================================================
-# (A) Exact estimator -- the reference (THEORY.md s.8 / s.10: 2**E enumeration).
+# (A) Exact estimator -- the reference (THEORY.md §8 / §10: 2**E enumeration).
 # ======================================================================================
 
 
@@ -133,14 +133,14 @@ def exact_active_sets(
     log_dwell_stay: float,
     seed: int = 0,
 ) -> tuple[np.ndarray, list[frozenset[int]]]:
-    """Exact per-edge active-set posterior by ``2**E`` subset enumeration (THEORY.md s.8).
+    """Exact per-edge active-set posterior by ``2**E`` subset enumeration (THEORY.md §8).
 
     The reference estimator. Builds the ``2**E`` subset alphabet, assembles the joint
     log-emission (per-edge active/inactive sum, conditionally independent given the set),
     runs forward-backward + Viterbi over that alphabet (:mod:`contact.hmm`) under the
     structure-level dwell prior, and marginalizes the subset posterior to the per-edge
     active probability. Exact for any ``E`` but ``O(T * 4**E)`` in time and ``O(2**E)`` in
-    state -- correct and preferred for the small graphs the package ships with (s.10),
+    state -- correct and preferred for the small graphs the package ships with (§10),
     and the ground truth :func:`particle_filter_active_sets` is validated against.
 
     Parameters
@@ -150,7 +150,7 @@ def exact_active_sets(
         columns need not be normalized; only their difference affects the posterior.
     log_dwell_stay:
         Log self-transition probability of the structure-level Markov chain (THEORY.md
-        s.5); ``p_stay = exp(log_dwell_stay)``, the leftover mass split uniformly over the
+        §5); ``p_stay = exp(log_dwell_stay)``, the leftover mass split uniformly over the
         other subsets.
     seed:
         Accepted for API symmetry with :func:`particle_filter_active_sets` and
@@ -174,7 +174,7 @@ def exact_active_sets(
 
     # Initial prior over subsets: favour the empty set (a record usually begins with no
     # contacts made), the rest uniform -- soft, so emissions dominate after frame 0. This
-    # matches contact.graph.detect_scene's FREE-favouring init (THEORY.md s.5).
+    # matches contact.graph.detect_scene's FREE-favouring init (THEORY.md §5).
     init = np.full(n_subsets, 0.5 / (n_subsets - 1) if n_subsets > 1 else 1.0, dtype=float)
     init[0] = 0.5 if n_subsets > 1 else 1.0
     init /= init.sum()
@@ -191,7 +191,7 @@ def exact_active_sets(
 
 
 # ======================================================================================
-# (B) Particle smoother -- scales to large E without enumerating 2**E (THEORY.md s.8).
+# (B) Particle smoother -- scales to large E without enumerating 2**E (THEORY.md §8).
 #
 # The exact reference (A) is a *smoother* (forward-backward conditions each frame on the
 # whole record). A plain bootstrap particle *filter* is causal and would estimate a
@@ -200,7 +200,7 @@ def exact_active_sets(
 # the small set of active-sets the data actually supports (never the full 2**E), and a
 # backward pass reweights those *visited* sets into the smoothing marginal using the
 # analytic dwell transition. Both passes are O(E) per particle and only ever touch visited
-# sets, so the cost is governed by the particle count, not by 2**E (THEORY.md s.8/s.10).
+# sets, so the cost is governed by the particle count, not by 2**E (THEORY.md §8/§10).
 # ======================================================================================
 
 
@@ -214,7 +214,7 @@ def _initial_particles(
     mixture without enumeration: half the particles (in expectation) are the empty set;
     the rest are a *uniform non-empty* subset, drawn as ``E`` fair coins with the all-zero
     outcome rejected (resampled) so the support is the non-empty subsets, uniformly. This
-    keeps the filter's prior identical to the reference's (THEORY.md s.5, soft init).
+    keeps the filter's prior identical to the reference's (THEORY.md §5, soft init).
     """
     parts = np.zeros((n_particles, E), dtype=bool)
     pick_nonempty = rng.random(n_particles) >= 0.5
@@ -234,7 +234,7 @@ def _propose_next(parts: np.ndarray, p_stay: float, rng: np.random.Generator) ->
     jumps to a set drawn *uniformly over the other ``2**E - 1`` subsets*. A uniform draw
     over all ``2**E`` subsets is just ``E`` fair coins; conditioning it on "not the current
     set" (rejection) yields the uniform-over-others jump. This is ``O(E)`` per particle and
-    never enumerates -- the property that makes the filter scale (THEORY.md s.8/s.10).
+    never enumerates -- the property that makes the filter scale (THEORY.md §8/§10).
     """
     n, E = parts.shape
     out = parts.copy()
@@ -253,10 +253,10 @@ def particle_filter_active_sets(
     n_particles: int = 256,
     seed: int = 0,
 ) -> tuple[np.ndarray, list[frozenset[int]]]:
-    """Rao-Blackwellized particle SMOOTHER over the active-set sequence (THEORY.md s.8).
+    """Rao-Blackwellized particle SMOOTHER over the active-set sequence (THEORY.md §8).
 
     Scales the structure posterior to large ``E`` **without enumerating** ``2**E`` (the
-    THEORY.md s.8 "particle filter over the discrete structure"; s.10's large-``E`` rung)
+    THEORY.md §8 "particle filter over the discrete structure"; §10's large-``E`` rung)
     while estimating the *same* smoothing marginal as the exact reference
     :func:`exact_active_sets`, so the two agree in the large-particle limit. Each particle
     is one active set (an ``E``-bit boolean vector). The method is a Rao-Blackwellized
@@ -367,18 +367,18 @@ def particle_filter_active_sets(
 
 
 class StructurePosterior:
-    """The active-contact-STRUCTURE posterior over a graph's ``E`` candidate edges (s.8).
+    """The active-contact-STRUCTURE posterior over a graph's ``E`` candidate edges (§8).
 
     The multi-body analog of :class:`contact.hmm.HMM`. Where the HMM infers the latent MODE
     per frame for ONE body pair, this infers which SET of edges is simultaneously active over
     time -- a posterior over the ``2**E`` structures. It bundles the structure-level temporal
-    prior (the self-stay log-probability ``log_dwell_stay``, THEORY.md s.5 lifted to the
+    prior (the self-stay log-probability ``log_dwell_stay``, THEORY.md §5 lifted to the
     structure level), so the per-edge log-evidence ``(T, E, 2)`` is the only per-call input.
     Two estimators of the SAME posterior, each returning ``(per-edge active posterior (T, E),
     MAP active-set sequence)``:
 
       * :meth:`exact`  -- enumerate the ``2**E`` subset alphabet and run the HMM
-        forward-backward / Viterbi over it (the reference; preferred for small ``E``, s.10).
+        forward-backward / Viterbi over it (the reference; preferred for small ``E``, §10).
       * :meth:`filter` -- a Rao-Blackwellized particle smoother that scales to large ``E``
         without ever materializing the ``2**E`` alphabet.
     """

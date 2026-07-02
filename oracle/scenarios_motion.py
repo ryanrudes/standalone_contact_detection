@@ -1,8 +1,8 @@
-"""Single-pair contact-detection demos showcasing varied contact MODES (THEORY.md s.9).
+"""Single-pair contact-detection demos showcasing varied contact MODES (THEORY.md §9).
 
 These are additional SCENARIO builders for the MuJoCo truth factory. Each one shapes the
-*physics* so a particular twist regime (THEORY.md s.3) dominates and the truth labeler
-(``mujoco_gen._classify_mode``) reports the named mode:
+*physics* so a particular twist regime (THEORY.md §3) dominates and the truth labeler
+(``oracle.factory._classify_mode``) reports the named mode:
 
 * ``incline_slide`` : a box on a TILTED plane slides downhill -> SLIDING, with a
   non-vertical support normal (the gap channel is tested against a tilted plane).
@@ -15,9 +15,10 @@ These are additional SCENARIO builders for the MuJoCo truth factory. Each one sh
 
 Self-contained by contract: this module imports ONLY ``mujoco``, ``numpy`` and a couple of
 names from ``contact.types`` (the mode-string constants, for documentation only). It defines
-its own tiny <option>/id helpers so it never has to import ``mujoco_gen`` (which would create
-an import cycle, since ``mujoco_gen`` imports THIS file at its end). The generic
-simulate/label/observe path in ``mujoco_gen`` does everything else; a builder only returns
+its own tiny <option>/id helpers from the ``oracle._mjcf`` leaf and registers each builder
+by name via ``oracle.registry.scenario`` (a leaf that imports nothing, so there is no
+cycle). The generic simulate/label/observe path in ``oracle.factory`` does everything
+else; a builder only returns
 ``(model, build_dict)``.
 
 The builder contract (single-contact-pair scenarios), reproduced here for clarity:
@@ -30,7 +31,7 @@ The builder contract (single-contact-pair scenarios), reproduced here for clarit
     build["init"]      optional callable(model, data) -> None  (one-time, e.g. set qvel)
     build["forcing"]   optional callable(model, data) -> None  (each substep)
 We deliberately do NOT set ``box_corners_local`` (that triggers the inverse-dynamics
-metadata path reserved for the box-on-plane scenarios in ``mujoco_gen``).
+metadata path reserved for the box-on-plane scenarios in ``oracle.factory``).
 """
 
 from __future__ import annotations
@@ -41,8 +42,12 @@ import mujoco
 
 from ._mjcf import free_dofadr as _free_dofadr, obj_id as _id, options as _common_options
 
-# Imports only ``mujoco``/``numpy`` and the leaf ``contact._mjcf`` helpers, so ``mujoco_gen``
-# (which imports this file at its end to register the builders) stays cycle-free.
+from oracle.registry import scenario
+from contact.geometry_resolvers import BoxPlane
+from oracle.specs import ScenarioSpec
+
+# Imports only ``mujoco``/``numpy``, the leaf ``oracle._mjcf`` helpers, and the registry
+# leaf the builders below self-register into — all cycle-free.
 
 
 # Shared geometry constants (kept consistent so contact_point_local / surface lines up).
@@ -53,10 +58,11 @@ _BOX_HALF = 0.10        # box half-extent (m); bottom-center material point is [
 # Scenario builders
 # --------------------------------------------------------------------------------------
 
+@scenario("incline_slide")
 def _build_incline_slide() -> tuple[mujoco.MjModel, dict]:
     """A box rests on a TILTED plane (~20 deg) and slides downhill under gravity.
 
-    Physics (THEORY.md s.3, the sliding mode, and s.1, the support-relative gap with a
+    Physics (THEORY.md §3, the sliding mode, and §1, the support-relative gap with a
     NON-vertical normal). The plane is tilted by angle ``theta`` about the +y axis, so its
     outward normal is ``n = (sin theta, 0, cos theta)`` -- NOT +z. Gravity's component
     along the incline is ``g sin theta``; the static-friction ceiling is ``mu g cos theta``.
@@ -133,30 +139,31 @@ def _build_incline_slide() -> tuple[mujoco.MjModel, dict]:
         adr = _free_dofadr(m, box_id)
         d.qvel[adr:adr + 3] = v0 * downhill
 
-    build = {
-        "init": init,
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "ramp",
+    return ScenarioSpec(
+        model=model,
+        init=init,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="ramp",
         # Surface point + normal in the support (world) frame: the actual incline top-face
         # point and its tilted outward normal n = (sin theta, 0, cos theta) -- NON-vertical,
         # the whole point of this demo (the support-relative gap with a tilted normal).
-        "surface_point_local": top_world,
-        "surface_normal_local": n_world,
+        surface_point_local=top_world,
+        surface_normal_local=n_world,
         # Tracked material point on the box: the center of the face lying on the incline
         # (the slab-local -z face center; the slab is pre-tilted to match the incline).
-        "contact_point_local": np.array([0.0, 0.0, -0.025]),
-        "shape": "box",
-        "duration": 1.2,
-    }
-    return model, build
+        contact_point_local=np.array([0.0, 0.0, -0.025]),
+        shape="box",
+        duration=1.2,
+    )
 
 
+@scenario("skid_to_rest")
 def _build_skid_to_rest() -> tuple[mujoco.MjModel, dict]:
     """A box launched horizontally on a high-friction floor skids and decelerates to rest.
 
-    Physics (THEORY.md s.3): an initial COM velocity along +x with the box already seated on
+    Physics (THEORY.md §3): an initial COM velocity along +x with the box already seated on
     the floor. Kinetic friction ``mu m g`` decelerates it at constant ``a = mu g`` until the
     material contact point's tangential slip drops below the slip threshold -> the mode
     transitions SLIDING -> STATIC. We give it enough speed (2.5 m/s) and a high-ish mu (0.6)
@@ -189,25 +196,26 @@ def _build_skid_to_rest() -> tuple[mujoco.MjModel, dict]:
         adr = _free_dofadr(m, box_id)
         d.qvel[adr + 0] = 2.5  # world +x linear velocity
 
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
-        "duration": 1.5,
-        "init": init,
-    }
-    return model, build
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
+        duration=1.5,
+        init=init,
+    )
 
 
+@scenario("spinning_top")
 def _build_spinning_top() -> tuple[mujoco.MjModel, dict]:
     """A top spun FAST about the vertical (= contact-normal) axis, staying in place.
 
-    Physics (THEORY.md s.3, the pivoting mode): pivoting is spin about the contact NORMAL
+    Physics (THEORY.md §3, the pivoting mode): pivoting is spin about the contact NORMAL
     with ~no tangential slip and ~no normal closing. The discriminator is the *material
     contact point*: PIVOTING needs that point's tangential slip to stay small
     (``slip_tan < _SLIP_EPS``) while the relative spin about the normal is large
@@ -278,27 +286,28 @@ def _build_spinning_top() -> tuple[mujoco.MjModel, dict]:
         adr = _free_dofadr(m, top_id)
         d.qvel[adr + 5] = 2.0  # world +z angular velocity (rad/s)
 
-    build = {
-        "moving_body": "top",
-        "moving_geom": "footg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
+    return ScenarioSpec(
+        model=model,
+        moving_body="top",
+        moving_geom="footg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
         # Tracked material point: the bottom of the foot (on the spin axis), so its tangential
         # slip is ~0 while the body spins -> the rigorous pivoting signature.
-        "contact_point_local": np.array([0.0, 0.0, -foot_r]),
-        "shape": "cylinder",
-        "duration": 1.5,
-        "init": init,
-    }
-    return model, build
+        contact_point_local=np.array([0.0, 0.0, -foot_r]),
+        shape="cylinder",
+        duration=1.5,
+        init=init,
+    )
 
 
+@scenario("tumbling_box")
 def _build_tumbling_box() -> tuple[mujoco.MjModel, dict]:
     """A box thrown with linear + angular velocity tumbles across the floor then rests.
 
-    Physics (THEORY.md s.6, impacts as force atoms; s.3 modes). The box starts in the air
+    Physics (THEORY.md §6, impacts as force atoms; §3 modes). The box starts in the air
     and is launched with a forward+upward COM velocity and a spin about +y (the lateral axis,
     so it tumbles end-over-end in the x-z plane). Each time a corner/edge strikes the floor
     the relative normal velocity is arrested almost discontinuously -> an IMPACT atom;
@@ -353,37 +362,24 @@ def _build_tumbling_box() -> tuple[mujoco.MjModel, dict]:
         d.qvel[adr + 2] = 1.5    # +z linear (real upward arc -> airborne FREE between strikes)
         d.qvel[adr + 4] = 9.2    # +y angular (tumble forward, end over end; lands upright)
 
-    build = {
-        "moving_body": "box",
-        "moving_geom": "boxg",
-        "support_body": "world",
-        "support_geom": "floor",
-        "surface_point_local": np.zeros(3),
-        "surface_normal_local": np.array([0.0, 0.0, 1.0]),
-        "contact_point_local": np.array([0.0, 0.0, -_BOX_HALF]),
-        "shape": "box",
-        "duration": 2.5,
-        "init": init,
+    return ScenarioSpec(
+        model=model,
+        moving_body="box",
+        moving_geom="boxg",
+        support_body="world",
+        support_geom="floor",
+        surface_point_local=np.zeros(3),
+        surface_normal_local=np.array([0.0, 0.0, 1.0]),
+        contact_point_local=np.array([0.0, 0.0, -_BOX_HALF]),
+        shape="box",
+        duration=2.5,
+        init=init,
         # Attach a BoxPlane resolver (DESIGN.md PHASE 2): the box tumbles, so the contact is
         # whichever of its 8 CORNERS is currently lowest -- a MIGRATING contact. The legacy
         # fixed bottom-face point ([0,0,-_BOX_HALF]) sits ~225 mm in the air when a corner
         # strikes, so its gap never closes at a bounce and the per-corner IMPACT cannot fire.
         # The BoxPlane's nearest-corner gap closes at every bounce, so the impacts are seen.
-        "geometry": {"kind": "box_plane", "half_extents": [_BOX_HALF, _BOX_HALF, _BOX_HALF]},
-    }
-    return model, build
+        resolver=lambda surface: BoxPlane(np.array([_BOX_HALF, _BOX_HALF, _BOX_HALF]), surface),
+    )
 
 
-# --------------------------------------------------------------------------------------
-# Registries (the required module-level dicts). SCENE_BUILDERS is intentionally empty:
-# every demo here is a single contact PAIR (a moving body vs one support).
-# --------------------------------------------------------------------------------------
-
-SCENARIO_BUILDERS: dict[str, callable] = {
-    "incline_slide": _build_incline_slide,
-    "skid_to_rest": _build_skid_to_rest,
-    "spinning_top": _build_spinning_top,
-    "tumbling_box": _build_tumbling_box,
-}
-
-SCENE_BUILDERS: dict[str, callable] = {}
